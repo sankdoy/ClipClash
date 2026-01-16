@@ -1,14 +1,28 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import type { ChatMessage, Player, ServerMessage, Settings } from '../types'
+import type {
+  ChatMessage,
+  Phase,
+  Player,
+  RoundEntry,
+  RoundHistoryEntry,
+  RoundResult,
+  RoundState,
+  RpsChoice,
+  ScoreboardEntry,
+  ServerMessage,
+  Settings,
+  TieBreakState,
+  TimerState
+} from '../types'
 
 const defaultCategories = [
-  'Cutest',
-  'Funniest',
-  'Most out of pocket',
-  'Cringiest',
-  'Most satisfying',
-  'Weirdest'
+  { id: 'cutest', name: 'Cutest' },
+  { id: 'funniest', name: 'Funniest' },
+  { id: 'out-of-pocket', name: 'Most out of pocket' },
+  { id: 'cringe', name: 'Cringiest' },
+  { id: 'satisfying', name: 'Most satisfying' },
+  { id: 'weirdest', name: 'Weirdest' }
 ]
 
 function getWsBase() {
@@ -27,14 +41,34 @@ function safeParseMessage(raw: string): ServerMessage | null {
   }
 }
 
+function formatSeconds(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = Math.max(0, totalSeconds % 60)
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
 export default function Room() {
   const { roomId } = useParams()
   const [isConnected, setIsConnected] = useState(false)
   const [players, setPlayers] = useState<Player[]>([])
   const [chat, setChat] = useState<ChatMessage[]>([])
   const [settings, setSettings] = useState<Settings | null>(null)
+  const [timer, setTimer] = useState<TimerState | null>(null)
+  const [phase, setPhase] = useState<Phase>('lobby')
+  const [round, setRound] = useState<RoundState | null>(null)
+  const [roundResult, setRoundResult] = useState<RoundResult | null>(null)
+  const [tiebreak, setTiebreak] = useState<TieBreakState | null>(null)
+  const [tiebreakChoice, setTiebreakChoice] = useState<RpsChoice | null>(null)
+  const [voteSelection, setVoteSelection] = useState<string | null>(null)
+  const [scoreboard, setScoreboard] = useState<ScoreboardEntry[]>([])
+  const [history, setHistory] = useState<RoundHistoryEntry[]>([])
   const [displayName, setDisplayName] = useState('')
+  const [sessionId, setSessionId] = useState<string | null>(null)
   const [message, setMessage] = useState('')
+  const [voteIntent, setVoteIntent] = useState<'higher' | 'lower' | 'neutral'>('neutral')
+  const [submissionDrafts, setSubmissionDrafts] = useState<Record<string, string>>({})
+  const [submissionSaved, setSubmissionSaved] = useState<Record<string, string>>({})
+  const [submissionErrors, setSubmissionErrors] = useState<Record<string, string>>({})
   const categories = useMemo(() => defaultCategories, [])
   const socketRef = useRef<WebSocket | null>(null)
 
@@ -49,9 +83,14 @@ export default function Room() {
       const data = safeParseMessage(event.data)
       if (!data) return
       if (data.type === 'welcome') {
+        setSessionId(data.sessionId)
         setPlayers(data.players)
         setChat(data.chat)
         setSettings(data.settings)
+        setTimer(data.timer)
+        setPhase(data.phase)
+        setScoreboard(data.scoreboard)
+        setHistory(data.history)
       }
       if (data.type === 'presence') {
         setPlayers(data.players)
@@ -59,12 +98,61 @@ export default function Room() {
       if (data.type === 'chat') {
         setChat((prev) => [...prev, data.chat])
       }
+      if (data.type === 'timer') {
+        setTimer(data.timer)
+        setPhase(data.phase)
+      }
+      if (data.type === 'round_start') {
+        setRound(data.round)
+        setRoundResult(null)
+        setTiebreak(null)
+        setTiebreakChoice(null)
+        setVoteSelection(null)
+      }
+      if (data.type === 'round_result') {
+        setRoundResult(data.result)
+      }
+      if (data.type === 'scoreboard') {
+        setScoreboard(data.scoreboard)
+        setHistory(data.history)
+      }
+      if (data.type === 'tiebreak_start') {
+        setTiebreak(data.tiebreak)
+      }
+      if (data.type === 'tiebreak_result') {
+        setTiebreak(data.tiebreak)
+      }
+      if (data.type === 'submission_saved') {
+        setSubmissionSaved((prev) => ({ ...prev, [data.categoryId]: data.url }))
+        setSubmissionErrors((prev) => {
+          const next = { ...prev }
+          delete next[data.categoryId]
+          return next
+        })
+      }
     })
 
     return () => {
       ws.close()
     }
   }, [roomId])
+
+  useEffect(() => {
+    if (!roomId) return
+    const stored = window.localStorage.getItem(`tto:drafts:${roomId}`)
+    if (!stored) return
+    try {
+      const parsed = JSON.parse(stored) as Record<string, string>
+      setSubmissionDrafts(parsed)
+    } catch {
+      return
+    }
+  }, [roomId])
+
+  useEffect(() => {
+    if (!roomId) return
+    window.localStorage.setItem(`tto:drafts:${roomId}`, JSON.stringify(submissionDrafts))
+  }, [roomId, submissionDrafts])
 
   const sendHello = () => {
     const ws = socketRef.current
@@ -79,6 +167,69 @@ export default function Room() {
     setMessage('')
   }
 
+  const sendVote = (direction: 'higher' | 'lower' | 'neutral') => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'vote_time', direction }))
+    setVoteIntent(direction)
+  }
+
+  const startHunt = () => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'start_hunt' }))
+  }
+
+  const sendVoteEntry = (entryId: string) => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'vote_submission', entryId }))
+    setVoteSelection(entryId)
+  }
+
+  const sendTiebreakChoice = (choice: RpsChoice) => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'rps_choice', choice }))
+    setTiebreakChoice(choice)
+  }
+
+  const resetMatch = () => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'reset_match' }))
+  }
+
+  const isHost = players.find((player) => player.id === sessionId)?.isHost ?? false
+
+  const submitLink = (categoryId: string) => {
+    const url = (submissionDrafts[categoryId] ?? '').trim()
+    if (!isValidTikTokUrl(url)) {
+      setSubmissionErrors((prev) => ({ ...prev, [categoryId]: 'TikTok links only.' }))
+      return
+    }
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'submit_submission', categoryId, url }))
+  }
+
+  const displayTimer = () => {
+    if (!timer) return `${settings?.defaultTime ?? 10}:00`
+    if (phase === 'hunt' && timer.huntRemainingSeconds !== null) {
+      return formatSeconds(timer.huntRemainingSeconds)
+    }
+    if (phase === 'intermission' && timer.intermissionRemainingSeconds !== null) {
+      return formatSeconds(timer.intermissionRemainingSeconds)
+    }
+    return `${timer.targetMinutes}:00`
+  }
+
+  const timerLabel = () => {
+    if (phase === 'hunt') return 'Hunt ends in'
+    if (phase === 'intermission') return 'Intermission'
+    return 'Current target'
+  }
+
   return (
     <div className="page room">
       <header className="room-header">
@@ -86,7 +237,8 @@ export default function Room() {
           <p className="eyebrow">Room</p>
           <h2>{roomId ?? 'unknown-room'}</h2>
           <p className="muted">
-            {isConnected ? 'Connected' : 'Connecting...'} • {players.length}/10 players
+            {isConnected ? 'Connected' : 'Connecting...'} • {players.length}/10 players • Host:{' '}
+            {players.find((player) => player.isHost)?.displayName ?? 'TBD'}
           </p>
         </div>
         <div className="room-actions">
@@ -119,31 +271,189 @@ export default function Room() {
             ))}
           </ul>
           <div className="room-controls">
-            <button className="btn primary">Start hunt</button>
-            <button className="btn ghost">Edit categories</button>
+            <button className="btn primary" onClick={startHunt} disabled={phase !== 'lobby' || !isHost}>
+              Start hunt
+            </button>
+            <button className="btn ghost" disabled>
+              Edit categories
+            </button>
+            <p className="muted">{isHost ? 'You are host.' : 'Host controls only.'}</p>
           </div>
         </div>
 
         <div className="card reveal" style={{ ['--delay' as string]: '0.2s' }}>
           <h3>Hunt timer</h3>
           <div className="timer">
-            <span className="timer-value">{settings?.defaultTime ?? 10}:00</span>
-            <span className="timer-label">Current target</span>
+            <span className="timer-value">{displayTimer()}</span>
+            <span className="timer-label">{timerLabel()}</span>
           </div>
           <div className="vote-strip">
-            <button className="btn outline">Higher</button>
-            <button className="btn outline">Lower</button>
+            <button
+              className={`btn outline ${voteIntent === 'higher' ? 'active' : ''}`}
+              onClick={() => sendVote('higher')}
+              disabled={phase !== 'lobby'}
+            >
+              Higher
+            </button>
+            <button
+              className={`btn outline ${voteIntent === 'lower' ? 'active' : ''}`}
+              onClick={() => sendVote('lower')}
+              disabled={phase !== 'lobby'}
+            >
+              Lower
+            </button>
+            <button
+              className={`btn outline ${voteIntent === 'neutral' ? 'active' : ''}`}
+              onClick={() => sendVote('neutral')}
+              disabled={phase !== 'lobby'}
+            >
+              Clear
+            </button>
           </div>
           <p className="muted">Vote recalculates every 5 seconds.</p>
+          <div className="vote-status">
+            <span>
+              Higher: {timer?.voteHigherCount ?? 0}
+            </span>
+            <span>
+              Lower: {timer?.voteLowerCount ?? 0}
+            </span>
+            <span>
+              Players: {timer?.playerCount ?? players.length}
+            </span>
+          </div>
         </div>
+
+        <div className="card reveal" style={{ ['--delay' as string]: '0.25s' }}>
+          <h3>Round voting</h3>
+          {phase !== 'rounds' ? (
+            <p className="muted">Rounds start after hunt + intermission.</p>
+          ) : (
+            <>
+              <p className="muted">
+                Category: <strong>{round?.categoryName ?? '...'}</strong>
+              </p>
+              <div className="round-grid">
+                {(round?.entries ?? []).map((entry) => (
+                  <button
+                    key={entry.id}
+                    className={`round-entry ${voteSelection === entry.id ? 'selected' : ''}`}
+                    onClick={() => sendVoteEntry(entry.id)}
+                    disabled={!!tiebreak || phase === 'results'}
+                  >
+                    <span>{entry.label}</span>
+                    <span className="muted">{entry.url ?? 'TikTok link pending'}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="muted">
+                Time left: {round?.remainingSeconds ?? 0}s
+              </p>
+              {tiebreak && (
+                <div className="tiebreak">
+                  <p className="muted">Tie-breaker: Rock–Paper–Scissors</p>
+                  <div className="tiebreak-grid">
+                    {(['rock', 'paper', 'scissors'] as RpsChoice[]).map((choice) => (
+                      <button
+                        key={choice}
+                        className={`btn outline ${tiebreakChoice === choice ? 'active' : ''}`}
+                        onClick={() => sendTiebreakChoice(choice)}
+                      >
+                        {choice}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="muted">Time left: {tiebreak.remainingSeconds ?? 0}s</p>
+                  {tiebreak.winnerEntryId && (
+                    <div className="round-result">
+                      <p>
+                        Tie-break winner:{' '}
+                        <strong>{getWinnerLabelFromEntries(tiebreak.winnerEntryId, round?.entries ?? [])}</strong>
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+              {roundResult && (
+                <div className="round-result">
+                  <p>
+                    Winner: <strong>{getWinnerLabel(roundResult, round?.entries ?? [])}</strong>
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="card reveal" style={{ ['--delay' as string]: '0.28s' }}>
+          <h3>Scoreboard</h3>
+          {scoreboard.length === 0 ? (
+            <p className="muted">No wins yet.</p>
+          ) : (
+            <div className="scoreboard">
+              {scoreboard.map((entry) => (
+                <div key={entry.entryId} className="score-row">
+                  <span>{entry.displayName}</span>
+                  <span>{entry.wins}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {phase === 'results' && (
+          <div className="results-panel">
+            <div className="results-card">
+              <h3>Match results</h3>
+              {history.length === 0 ? (
+                <p className="muted">No rounds played.</p>
+              ) : (
+                <div className="history">
+                  {history.map((entry) => (
+                    <div key={entry.categoryId} className="history-row">
+                      <span>{entry.categoryName}</span>
+                      <span>{entry.winnerName}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button className="btn primary" onClick={resetMatch} disabled={!isHost}>
+                Play again
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="card reveal" style={{ ['--delay' as string]: '0.3s' }}>
           <h3>Categories</h3>
           <div className="category-grid">
             {categories.map((category) => (
-              <div key={category} className="category-card">
-                <span>{category}</span>
-                <button className="btn ghost">Add TikTok</button>
+              <div key={category.id} className="category-card">
+                <div>
+                  <span>{category.name}</span>
+                  {submissionSaved[category.id] && (
+                    <p className="muted">Saved: {submissionSaved[category.id]}</p>
+                  )}
+                  {submissionDrafts[category.id] && !submissionSaved[category.id] && (
+                    <p className="muted">Draft saved locally.</p>
+                  )}
+                  {submissionErrors[category.id] && (
+                    <p className="error">{submissionErrors[category.id]}</p>
+                  )}
+                </div>
+                <div className="category-actions">
+                  <input
+                    type="text"
+                    placeholder="Paste TikTok URL"
+                    value={submissionDrafts[category.id] ?? ''}
+                    onChange={(e) =>
+                      setSubmissionDrafts((prev) => ({ ...prev, [category.id]: e.target.value }))
+                    }
+                  />
+                  <button className="btn ghost" onClick={() => submitLink(category.id)}>
+                    Save
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -189,4 +499,19 @@ export default function Room() {
       </section>
     </div>
   )
+}
+
+function getWinnerLabel(result: RoundResult, entries: RoundEntry[]) {
+  const winner = entries.find((entry) => entry.id === result.winnerSubmissionId)
+  return winner?.label ?? 'TBD'
+}
+
+function getWinnerLabelFromEntries(winnerId: string, entries: RoundEntry[]) {
+  const winner = entries.find((entry) => entry.id === winnerId)
+  return winner?.label ?? 'TBD'
+}
+
+function isValidTikTokUrl(url: string) {
+  if (!url) return false
+  return url.toLowerCase().includes('tiktok.com')
 }
