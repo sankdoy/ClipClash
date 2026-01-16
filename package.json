@@ -7,7 +7,7 @@
     "build": "VITE_CJS_IGNORE_WARNING=1 vite build",
     "preview": "vite preview --port 5173",
     "cf:dev": "npm run build && wrangler pages dev dist",
-    "test": "vitest run"
+    "test": "VITE_CJS_IGNORE_WARNING=1 vitest run"
   },
   "dependencies": {
     "react": "^18.2.0",

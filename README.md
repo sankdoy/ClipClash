@@ -8,10 +8,10 @@ Tech stack (current)
 - Vite + React + TypeScript
 - Cloudflare Pages Functions for minimal API endpoints
 
-Tech stack (planned multiplayer)
-- Durable Objects + WebSockets for realtime rooms/state. Durable Objects must be deployed as a separate Worker and then bound into Pages via dashboard or Wrangler; they are not created from within the Pages project.
+Tech stack (realtime)
+- Durable Objects + WebSockets for realtime rooms/state. Durable Objects are deployed as a separate Worker and then bound into Pages via dashboard or Wrangler.
 
-Game flow (planned)
+Game flow
 - Players: 2–10
 - Lobby types: public + private rooms
 - Flow:
@@ -57,21 +57,26 @@ Cloudflare Pages setup
 - Pages Functions are served from `/functions` and are file-based routed
 
 Durable Objects worker (rooms)
-- Worker config: `do-worker/wrangler.toml`
+- Worker config: `workers/rooms/wrangler.toml`
 - Local dev:
 ```
-npx wrangler dev --config do-worker/wrangler.toml
+npx wrangler dev --config workers/rooms/wrangler.toml
 ```
 - Bind the worker to Pages as a separate deployment (Dashboard or Wrangler).
 
 Roadmap (short checklist)
-- [ ] MVP lobby
-- [ ] Link submission UI
-- [ ] Voting UI
-- [ ] Chat (persistent)
-- [ ] Realtime rooms/state via Durable Objects
-- [ ] Moderation tools
-- [ ] Sponsor slot UI
+- [x] MVP + V1 features (rooms, realtime, chat, submissions, voting, results, tiebreak, sponsor slot, moderation basics, persistence)
+- [ ] V2 Milestone 1: DB + accounts + leaderboard + baseline moderation
+- [ ] V2 Milestone 2: Themes (dark mode + style packs)
+- [ ] V2 Milestone 3: Host custom categories
+- [ ] V2 Milestone 4: Payments & audience entitlements
+- [ ] V2 Milestone 5: Audience experience
+- [ ] V2 Milestone 6: Unique codes + lifecycle
+- [ ] V2 Milestone 7: Donate page + webhook persistence
+
+Docs
+- Deployment: `docs/DEPLOYMENT.md`
+- Security & moderation: `docs/SECURITY.md`
 
 Contributing
 - PRs welcome. Please follow code style (Prettier) and provide a short description of changes.

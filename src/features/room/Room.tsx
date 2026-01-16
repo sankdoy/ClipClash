@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { getMe } from '../../utils/auth'
 import type {
   Category,
   ChatMessage,
@@ -16,6 +17,7 @@ import type {
   TieBreakState,
   TimerState
 } from '../../types'
+import { isTikTokUrl } from '../../../shared/tiktok'
 
 const fallbackCategories: Category[] = [
   { id: 'cutest', name: 'Cutest' },
@@ -67,6 +69,7 @@ export default function Room() {
   const [scoreboard, setScoreboard] = useState<ScoreboardEntry[]>([])
   const [history, setHistory] = useState<RoundHistoryEntry[]>([])
   const [displayName, setDisplayName] = useState('')
+  const [accountUsername, setAccountUsername] = useState<string | null>(null)
   const [playerId, setPlayerId] = useState<string | null>(null)
   const [sessionToken, setSessionToken] = useState<string | null>(null)
   const [message, setMessage] = useState('')
@@ -172,6 +175,22 @@ export default function Room() {
       ws.close()
     }
   }, [roomId])
+
+  useEffect(() => {
+    getMe().then((data) => {
+      if (data?.user?.username) {
+        setAccountUsername(data.user.username)
+        setDisplayName(data.user.username)
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!accountUsername || !isConnected) return
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'update_name', name: accountUsername }))
+  }, [accountUsername, isConnected])
 
   useEffect(() => {
     if (!roomId) return
@@ -313,7 +332,7 @@ export default function Room() {
 
   const submitLink = (categoryId: string) => {
     const url = (submissionDrafts[categoryId] ?? '').trim()
-    if (!isValidTikTokUrl(url)) {
+    if (!isTikTokUrl(url)) {
       setSubmissionErrors((prev) => ({ ...prev, [categoryId]: 'TikTok links only.' }))
       return
     }
@@ -683,10 +702,6 @@ function getWinnerLabelFromEntries(winnerId: string, entries: RoundEntry[]) {
   return winner?.label ?? 'TBD'
 }
 
-function isValidTikTokUrl(url: string) {
-  if (!url) return false
-  return url.toLowerCase().includes('tiktok.com')
-}
 
 function mergeDrafts(existing: Record<string, string>, incoming: Record<string, string>) {
   const next = { ...incoming }

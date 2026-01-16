@@ -17,6 +17,6 @@
       "@/*": ["src/*"]
     }
   },
-  "include": ["src", "functions", "do-worker", "vite.config.ts", "vitest.config.ts"],
+  "include": ["src", "functions", "workers", "shared", "vite.config.ts", "vitest.config.ts"],
   "references": []
 }

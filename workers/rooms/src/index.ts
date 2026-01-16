@@ -18,14 +18,19 @@ import type {
   TimerState
 } from '../../../src/types'
 import { z } from 'zod'
+import { isBlocked } from '../../../shared/moderation'
+import { isTikTokUrl } from '../../../shared/tiktok'
 
 export interface Env {
   ROOMS_DO: DurableObjectNamespace
+  DB?: D1Database
 }
 
 type Session = {
   playerId: string | null
   sessionToken: string | null
+  accountId: string | null
+  accountUsername: string | null
   displayName: string
   joinedAt: number
   lastChatAt: number
@@ -40,6 +45,7 @@ type PlayerRecord = {
   joinedAt: number
   isConnected: boolean
   lastSeenAt?: number
+  accountId?: string
 }
 
 type ReportEntry = {
@@ -67,6 +73,8 @@ type PersistedState = {
   hostId?: string
   sessionTokens: Record<string, string>
   reports: ReportEntry[]
+  playerAccounts: Record<string, string>
+  resultsRecorded?: boolean
 }
 
 const defaultSettings: Settings = {
@@ -86,7 +94,6 @@ const defaultCategories = [
   { id: 'weirdest', name: 'Weirdest' }
 ]
 
-const bannedWords = ['slur', 'hate', 'abuse']
 const chatCooldownMs = 800
 const voteCooldownMs = 400
 const reportCooldownMs = 3000
@@ -161,10 +168,6 @@ const clientMessageSchema = z.union([
   reportSchema
 ])
 
-function containsBannedWord(text: string) {
-  const lowered = text.toLowerCase()
-  return bannedWords.some((word) => lowered.includes(word))
-}
 
 function safeJsonParse(value: string): ClientMessage | null {
   try {
@@ -192,6 +195,30 @@ function generateSessionToken() {
   const bytes = new Uint8Array(32)
   crypto.getRandomValues(bytes)
   return base64UrlEncode(bytes)
+}
+
+function getCookie(headers: Headers, name: string) {
+  const raw = headers.get('Cookie') ?? ''
+  const parts = raw.split(';').map((part) => part.trim())
+  const prefix = `${name}=`
+  for (const part of parts) {
+    if (part.startsWith(prefix)) {
+      return decodeURIComponent(part.slice(prefix.length))
+    }
+  }
+  return null
+}
+
+async function resolveAccount(env: Env, request: Request) {
+  if (!env.DB) return null
+  const token = getCookie(request.headers, 'cc_session')
+  if (!token) return null
+  const result = await env.DB.prepare(
+    'SELECT users.id, users.username FROM sessions JOIN users ON users.id = sessions.user_id WHERE sessions.token = ? AND sessions.expires_at > ?'
+  )
+    .bind(token, new Date().toISOString())
+    .first()
+  return result ? { id: result.id as string, username: result.username as string } : null
 }
 
 export function resolveSessionToken(
@@ -264,6 +291,8 @@ export class RoomsDO implements DurableObject {
   hostId: string | null
   tokenToPlayerId: Map<string, string>
   tokenToSocket: Map<string, WebSocket>
+  playerAccounts: Map<string, string>
+  resultsRecorded: boolean
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state
@@ -296,6 +325,8 @@ export class RoomsDO implements DurableObject {
     this.hostId = null
     this.tokenToPlayerId = new Map()
     this.tokenToSocket = new Map()
+    this.playerAccounts = new Map()
+    this.resultsRecorded = false
 
     this.state.blockConcurrencyWhile(async () => {
       const stored = await this.state.storage.get<PersistedState>('room_state')
@@ -318,6 +349,8 @@ export class RoomsDO implements DurableObject {
       this.hostId = stored.hostId ?? null
       this.tokenToPlayerId = new Map(Object.entries(stored.sessionTokens ?? {}))
       this.reports = stored.reports ?? []
+      this.playerAccounts = new Map(Object.entries(stored.playerAccounts ?? {}))
+      this.resultsRecorded = stored.resultsRecorded ?? false
       this.submissions = new Map(
         Object.entries(stored.submissions ?? {}).map(([categoryId, items]) => [
           categoryId,
@@ -332,12 +365,15 @@ export class RoomsDO implements DurableObject {
       return new Response('Expected websocket', { status: 426 })
     }
 
+    const account = await resolveAccount(this.env, request)
     const pair = new WebSocketPair()
     const client = pair[0]
     const server = pair[1]
     const session: Session = {
       playerId: null,
       sessionToken: null,
+      accountId: account?.id ?? null,
+      accountUsername: account?.username ?? null,
       displayName: 'Player',
       joinedAt: Date.now(),
       lastChatAt: 0,
@@ -352,7 +388,7 @@ export class RoomsDO implements DurableObject {
     return new Response(null, { status: 101, webSocket: client })
   }
 
-  webSocketMessage(ws: WebSocket, message: string) {
+  async webSocketMessage(ws: WebSocket, message: string) {
     const parsed = safeJsonParse(message)
     if (!parsed) {
       ws.send(toServerMessage({ type: 'error', message: 'Invalid message payload.' }))
@@ -384,7 +420,7 @@ export class RoomsDO implements DurableObject {
 
       const existingRecord = this.players.get(playerId)
       if (existingRecord) {
-        this.players.set(playerId, { ...existingRecord, isConnected: true })
+        this.players.set(playerId, { ...existingRecord, isConnected: true, accountId: session.accountId ?? existingRecord.accountId })
         session.displayName = existingRecord.displayName
         session.joinedAt = existingRecord.joinedAt
       } else {
@@ -392,8 +428,20 @@ export class RoomsDO implements DurableObject {
           id: playerId,
           displayName: session.displayName,
           joinedAt: session.joinedAt,
-          isConnected: true
+          isConnected: true,
+          accountId: session.accountId ?? undefined
         })
+      }
+
+      if (session.accountId) {
+        this.playerAccounts.set(playerId, session.accountId)
+        if (session.accountUsername) {
+          session.displayName = session.accountUsername
+          const record = this.players.get(playerId)
+          if (record) {
+            this.players.set(playerId, { ...record, displayName: session.accountUsername })
+          }
+        }
       }
 
       this.hostId = selectHost(this.hostId, playerId)
@@ -440,6 +488,14 @@ export class RoomsDO implements DurableObject {
 
     if (parsed.type === 'update_name') {
       if (!session.playerId) return
+      if (session.accountUsername && parsed.name.trim() !== session.accountUsername) {
+        ws.send(toServerMessage({ type: 'error', message: 'Use your account profile to change username.' }))
+        return
+      }
+      if (isBlocked(parsed.name)) {
+        ws.send(toServerMessage({ type: 'error', message: 'Display name blocked by moderation.' }))
+        return
+      }
       session.displayName = parsed.name.trim().slice(0, 24)
       this.sessions.set(ws, session)
       const record = this.players.get(session.playerId)
@@ -462,7 +518,7 @@ export class RoomsDO implements DurableObject {
       }
       const text = parsed.message.trim()
       if (!text) return
-      if (containsBannedWord(text)) {
+      if (isBlocked(text)) {
         ws.send(toServerMessage({ type: 'error', message: 'Message blocked by moderation.' }))
         return
       }
@@ -586,7 +642,7 @@ export class RoomsDO implements DurableObject {
         ws.send(toServerMessage({ type: 'error', message: 'Unknown category.' }))
         return
       }
-      if (!url.toLowerCase().includes('tiktok.com')) {
+      if (!isTikTokUrl(url)) {
         ws.send(toServerMessage({ type: 'error', message: 'Only TikTok URLs are allowed.' }))
         return
       }
@@ -811,6 +867,7 @@ export class RoomsDO implements DurableObject {
       this.tiebreak = null
       this.broadcast({ type: 'timer', phase: this.phase, timer: this.timer })
       this.broadcast({ type: 'scoreboard', scoreboard: this.getScoreboard(), history: this.history })
+      this.recordMatchStats()
       this.persistState()
       return
     }
@@ -989,7 +1046,9 @@ export class RoomsDO implements DurableObject {
       history: this.history,
       hostId: this.hostId ?? undefined,
       sessionTokens: Object.fromEntries(this.tokenToPlayerId.entries()),
-      reports: this.reports
+      reports: this.reports,
+      playerAccounts: Object.fromEntries(this.playerAccounts.entries()),
+      resultsRecorded: this.resultsRecorded
     }
     await this.state.storage.put('room_state', payload)
   }
@@ -1011,6 +1070,7 @@ export class RoomsDO implements DurableObject {
     this.votesByPlayer.clear()
     this.scoreboard.clear()
     this.history = []
+    this.resultsRecorded = false
   }
 
   pickNewHost() {
@@ -1041,6 +1101,51 @@ export class RoomsDO implements DurableObject {
 
   getScoreboard() {
     return Array.from(this.scoreboard.values()).sort((a, b) => b.wins - a.wins)
+  }
+
+  async recordMatchStats() {
+    if (this.resultsRecorded) return
+    if (!this.env.DB) return
+    const accountIds = Array.from(new Set(this.playerAccounts.values()))
+    if (accountIds.length === 0) return
+
+    const winsByAccount = new Map<string, number>()
+    for (const [playerId, entry] of this.scoreboard.entries()) {
+      const accountId = this.playerAccounts.get(playerId)
+      if (!accountId) continue
+      winsByAccount.set(accountId, (winsByAccount.get(accountId) ?? 0) + entry.wins)
+    }
+    const topWins = Math.max(0, ...Array.from(winsByAccount.values()))
+    const now = new Date().toISOString()
+
+    for (const accountId of accountIds) {
+      await this.env.DB.prepare(
+        'UPDATE stats SET games_played = games_played + 1, updated_at = ? WHERE user_id = ?'
+      )
+        .bind(now, accountId)
+        .run()
+    }
+    for (const [accountId, wins] of winsByAccount.entries()) {
+      if (wins > 0) {
+        await this.env.DB.prepare(
+          'UPDATE stats SET category_wins = category_wins + ?, updated_at = ? WHERE user_id = ?'
+        )
+          .bind(wins, now, accountId)
+          .run()
+      }
+    }
+    if (topWins > 0) {
+      for (const [accountId, wins] of winsByAccount.entries()) {
+        if (wins === topWins) {
+          await this.env.DB.prepare(
+            'UPDATE stats SET wins = wins + 1, updated_at = ? WHERE user_id = ?'
+          )
+            .bind(now, accountId)
+            .run()
+        }
+      }
+    }
+    this.resultsRecorded = true
   }
 
   getDrafts(playerId: string): DraftsByCategory {

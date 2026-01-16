@@ -5,6 +5,11 @@ compatibility_date = "2026-01-16"
 [durable_objects]
 bindings = [{ name = "ROOMS_DO", class_name = "RoomsDO" }]
 
+[[d1_databases]]
+binding = "DB"
+database_name = "clipclash-db"
+database_id = "d67646ad-23b5-41ae-8296-dfe477eff752"
+
 [[migrations]]
 tag = "v1"
 new_classes = ["RoomsDO"]
