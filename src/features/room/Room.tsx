@@ -135,6 +135,7 @@ export default function Room() {
   const [centerTab, setCenterTab] = useState<'presets' | 'custom'>('presets')
   const [mobilePanel, setMobilePanel] = useState<'main' | 'players' | 'side'>('main')
   const [actionNotice, setActionNotice] = useState<string | null>(null)
+  const [inviteOpen, setInviteOpen] = useState(false)
   const socketRef = useRef<WebSocket | null>(null)
 
   useEffect(() => {
@@ -312,6 +313,17 @@ export default function Room() {
   }, [actionNotice])
 
   useEffect(() => {
+    if (!inviteOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setInviteOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [inviteOpen])
+
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('audience') === 'success') {
       fetchEntitlements()
@@ -377,6 +389,16 @@ export default function Room() {
     try {
       await navigator.clipboard.writeText(url)
       setActionNotice('Invite link copied.')
+    } catch {
+      setActionNotice('Copy failed. Use the room code.')
+    }
+  }
+
+  const copyRoomCode = async () => {
+    if (!roomId) return
+    try {
+      await navigator.clipboard.writeText(roomId)
+      setActionNotice('Room code copied.')
     } catch {
       setActionNotice('Copy failed. Use the room code.')
     }
@@ -486,6 +508,9 @@ export default function Room() {
   while (playerSlots.length < maxPlayers) {
     playerSlots.push(null)
   }
+  const inviteUrl = roomId ? `${window.location.origin}/room/${roomId}` : ''
+  const submittedCount = Object.keys(submissionSaved).length
+  const nextCategory = categories[history.length]?.name
 
   const submitLink = (categoryId: string) => {
     const url = (submissionDrafts[categoryId] ?? '').trim()
@@ -759,17 +784,30 @@ export default function Room() {
           ) : (
             <div className="center-stack">
               <div className="panel-card">
-                <h3>Game flow</h3>
+                <h3>{phase === 'hunt' ? 'Hunt mode' : phase === 'intermission' ? 'Intermission' : 'Round in progress'}</h3>
                 <div className="timer">
                   <span className="timer-value">{displayTimer()}</span>
                   <span className="timer-label">{timerLabel()}</span>
                 </div>
-                <p className="muted">Phase: {phase}</p>
+                {phase === 'hunt' && (
+                  <p className="muted">Submit one TikTok per category. You have {categories.length} categories.</p>
+                )}
+                {phase === 'intermission' && (
+                  <p className="muted">
+                    Voting prep. Next up: {nextCategory ?? 'TBD'}.
+                  </p>
+                )}
+                {phase === 'rounds' && (
+                  <p className="muted">Vote secretly. You can only vote once per round.</p>
+                )}
               </div>
 
               {phase === 'hunt' && (
                 <div className="panel-card">
                   <h3>Submissions</h3>
+                  <p className="muted">
+                    Submitted: {submittedCount}/{categories.length}
+                  </p>
                   <div className="category-grid">
                     {categories.map((category) => (
                       <div key={category.id} className="category-card">
@@ -979,7 +1017,7 @@ export default function Room() {
       <div className="board-actions">
         <div className="actions-left">
           <span className="room-pill">Room code: {roomId ?? '---'}</span>
-          <button className="btn outline action-btn" onClick={copyInvite} disabled={!roomId}>
+          <button className="btn outline action-btn" onClick={() => setInviteOpen(true)} disabled={!roomId}>
             <span className="btn-icon">INV</span>
             Invite
           </button>
@@ -1002,6 +1040,44 @@ export default function Room() {
           </Link>
         </div>
       </div>
+
+      {inviteOpen && (
+        <div className="modal-scrim" role="dialog" aria-modal="true">
+          <div className="modal">
+            <div className="modal-header">
+              <h3>Invite players</h3>
+              <button className="btn ghost" onClick={() => setInviteOpen(false)}>
+                Close
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="invite-qr">
+                {inviteUrl && (
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(inviteUrl)}`}
+                    alt="Invite QR code"
+                  />
+                )}
+              </div>
+              <div className="invite-details">
+                <p className="muted">Share this room link or code.</p>
+                <div className="invite-row">
+                  <span className="room-pill">{inviteUrl || '---'}</span>
+                  <button className="btn outline" onClick={copyInvite} disabled={!roomId}>
+                    Copy link
+                  </button>
+                </div>
+                <div className="invite-row">
+                  <span className="room-pill">Code: {roomId ?? '---'}</span>
+                  <button className="btn ghost" onClick={copyRoomCode} disabled={!roomId}>
+                    Copy code
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
