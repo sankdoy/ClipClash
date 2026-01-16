@@ -11,7 +11,7 @@ function extractSummary(md: string) {
     } else cur.push(l)
   }
   if (cur.length) paras.push(cur.join(' '))
-  return paras[0] ?? 'TikTok Olympics'
+  return paras[0] ?? 'ClipClash'
 }
 
 export default function About() {

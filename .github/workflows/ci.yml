@@ -30,6 +30,6 @@ jobs:
 # To deploy to Cloudflare Pages from CI, add a step using `wrangler` and a secret CF_API_TOKEN
 # e.g.:
 # - name: Publish to Pages
-#   run: npx wrangler pages publish dist --project-name "tiktokolympics"
+#   run: npx wrangler pages publish dist --project-name "clipclash"
 #   env:
 #     CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}

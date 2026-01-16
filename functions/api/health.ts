@@ -1,7 +1,7 @@
 export async function onRequest(context: any) {
   const payload = {
     ok: true,
-    name: 'tiktokolympics',
+    name: 'clipclash',
     timestamp: new Date().toISOString(),
   }
   return new Response(JSON.stringify(payload), {

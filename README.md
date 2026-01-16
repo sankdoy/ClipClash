@@ -1,6 +1,6 @@
-# TikTok Olympics
+# ClipClash
 
-TikTok Olympics (tiktokolympics.com) — a social voting game where players submit and vote on TikTok videos across fun categories.
+ClipClash (clipclash.com) — a social voting game where players submit and vote on TikTok videos across fun categories.
 
 Short summary: Players (2–10) join public or private rooms, vote on a time limit, paste TikTok links into category slots during a timed submission phase, then vote anonymously on winners. Rounds include intermissions, tie-breakers via rock-paper-scissors, and a persistent chat. One sponsor slot per game is available.
 

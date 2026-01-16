@@ -7,7 +7,7 @@ import Room from './features/room/Room'
 function Header() {
   return (
     <header className="header">
-      <h1>TikTok Olympics</h1>
+      <h1>ClipClash</h1>
       <nav>
         <Link to="/">Home</Link>
         <Link to="/room/alpha">Room</Link>

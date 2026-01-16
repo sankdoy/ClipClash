@@ -700,7 +700,7 @@ function mergeDrafts(existing: Record<string, string>, incoming: Record<string, 
 
 function buildShareSummary(scoreboard: ScoreboardEntry[], history: RoundHistoryEntry[]) {
   const lines: string[] = []
-  lines.push('TikTok Olympics results')
+  lines.push('ClipClash results')
   if (scoreboard.length > 0) {
     lines.push('Scoreboard:')
     scoreboard.forEach((entry, index) => {
