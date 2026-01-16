@@ -1,3 +1,69 @@
-# TikTokOlympics
-secret
-yuh
+# TikTok Olympics
+
+TikTok Olympics (tiktokolympics.com) — a social voting game where players submit and vote on TikTok videos across fun categories.
+
+Short summary: Players (2–10) join public or private rooms, vote on a time limit, paste TikTok links into category slots during a timed submission phase, then vote anonymously on winners. Rounds include intermissions, tie-breakers via rock-paper-scissors, and a persistent chat. One sponsor slot per game is available.
+
+Tech stack (current)
+- Vite + React + TypeScript
+- Cloudflare Pages Functions for minimal API endpoints
+
+Tech stack (planned multiplayer)
+- Durable Objects + WebSockets for realtime rooms/state. Durable Objects must be deployed as a separate Worker and then bound into Pages via dashboard or Wrangler; they are not created from within the Pages project.
+
+Game flow (planned)
+- Players: 2–10
+- Lobby types: public + private rooms
+- Flow:
+  A) Players join a room and see a list of categories (examples: cutest, funniest, randomest, most satisfying, cringiest, most out of pocket, most boring, weirdest)
+  B) Time selection vote: default 10 minutes; players vote higher/lower; every 5 seconds, if ≥80% agree higher/lower then +/- 1 minute, otherwise keep
+  C) During timer, players paste TikTok links into the site under each category
+  D) When time ends: 30s intermission + chat stays open
+  E) Rounds: a category is chosen, submissions are anonymised (TikTok 1, 2, 3…)
+  F) Players vote for best match; winner revealed
+  G) Tie-break: rock-paper-scissors with a clean UI
+  H) Missing link handling: show “no submission” and skip quickly
+
+Chat is open throughout. Ads: one sponsor slot per game (not per round), no popups; if unfilled show “Buy this slot” link placeholder.
+
+Safety note: TikTok links only; no scraping. Embedding/preview may be limited by TikTok policies.
+
+Local dev
+1. Install
+```
+npm install
+```
+2. Run dev server
+```
+npm run dev
+```
+3. Build
+```
+npm run build
+```
+4. Preview
+```
+npm run preview
+```
+5. Cloudflare Pages local dev (requires Wrangler)
+```
+npm run cf:dev
+```
+
+Cloudflare Pages setup
+- Connect the repository in the Pages dashboard
+- Build command: `npm run build`
+- Output directory: `dist`
+- Pages Functions are served from `/functions` and are file-based routed
+
+Roadmap (short checklist)
+- [ ] MVP lobby
+- [ ] Link submission UI
+- [ ] Voting UI
+- [ ] Chat (persistent)
+- [ ] Realtime rooms/state via Durable Objects
+- [ ] Moderation tools
+- [ ] Sponsor slot UI
+
+Contributing
+- PRs welcome. Please follow code style (Prettier) and provide a short description of changes.

@@ -1,0 +1,30 @@
+import React from 'react'
+import { Routes, Route, Link } from 'react-router-dom'
+import Home from './pages/Home'
+import About from './pages/About'
+
+function Header() {
+  return (
+    <header className="header">
+      <h1>TikTok Olympics</h1>
+      <nav>
+        <Link to="/">Home</Link>
+        <Link to="/about">About</Link>
+      </nav>
+    </header>
+  )
+}
+
+export default function App() {
+  return (
+    <div className="app">
+      <Header />
+      <main>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/about" element={<About />} />
+        </Routes>
+      </main>
+    </div>
+  )
+}
