@@ -284,6 +284,8 @@ export default function Room() {
     window.localStorage.setItem(`tto:displayName:${roomId}`, displayName)
   }, [roomId, displayName])
 
+  const isHost = players.find((player) => player.id === playerId)?.isHost ?? false
+
   useEffect(() => {
     if (!roomId || loadedSavedDrafts || !isHost || phase !== 'lobby') return
     if (!categoriesMatchPreset(categories, fallbackCategories)) return
@@ -498,7 +500,6 @@ export default function Room() {
     }
   }
 
-  const isHost = players.find((player) => player.id === playerId)?.isHost ?? false
   const audienceEnabled = settings?.audienceModeEnabled ?? false
   const canPurchaseAudience = isHost && Boolean(accountUsername)
   const validCategoryCount = categoryDrafts.filter((category) => category.name.trim().length > 0).length
@@ -859,7 +860,7 @@ export default function Room() {
                         key={entry.id}
                         className={`round-entry ${voteSelection === entry.id ? 'selected' : ''}`}
                         onClick={() => sendVoteEntry(entry.id)}
-                        disabled={!!tiebreak || phase === 'results'}
+                        disabled={!!tiebreak}
                       >
                         <span>{entry.label}</span>
                         <span className="muted">{entry.url ?? 'No submission yet'}</span>
