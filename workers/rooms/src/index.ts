@@ -82,7 +82,8 @@ const defaultSettings: Settings = {
   maxTime: 20,
   defaultTime: 10,
   voteTickSeconds: 5,
-  voteThreshold: 0.8
+  voteThreshold: 0.8,
+  audienceModeEnabled: false
 }
 
 const defaultCategories = [
@@ -153,6 +154,11 @@ const reportSchema = z.object({
   messageId: z.string().min(1)
 })
 
+const setAudienceModeSchema = z.object({
+  type: z.literal('set_audience_mode'),
+  enabled: z.boolean()
+})
+
 const clientMessageSchema = z.union([
   helloSchema,
   updateNameSchema,
@@ -165,7 +171,8 @@ const clientMessageSchema = z.union([
   submitSubmissionSchema,
   voteSubmissionSchema,
   rpsSchema,
-  reportSchema
+  reportSchema,
+  setAudienceModeSchema
 ])
 
 
@@ -332,7 +339,7 @@ export class RoomsDO implements DurableObject {
       const stored = await this.state.storage.get<PersistedState>('room_state')
       if (!stored) return
       this.phase = stored.phase
-      this.settings = stored.settings
+      this.settings = { ...defaultSettings, ...(stored.settings ?? {}) }
       this.timer = stored.timer
       this.chat = stored.chat ?? []
       this.players = new Map((stored.players ?? []).map((player) => [player.id, player]))
@@ -576,6 +583,22 @@ export class RoomsDO implements DurableObject {
       this.pruneSubmissions(cleaned)
       this.pruneDrafts(cleaned)
       this.broadcast({ type: 'categories', categories: this.categories })
+      this.persistState()
+    }
+
+    if (parsed.type === 'set_audience_mode') {
+      if (this.hostId !== session.playerId) return
+      if (!session.accountId) {
+        ws.send(toServerMessage({ type: 'error', message: 'Sign in to enable Audience Mode.' }))
+        return
+      }
+      const allowed = await this.hasAudienceEntitlement(session.accountId)
+      if (!allowed) {
+        ws.send(toServerMessage({ type: 'error', message: 'Audience Mode not owned.' }))
+        return
+      }
+      this.settings = { ...this.settings, audienceModeEnabled: parsed.enabled }
+      this.broadcast({ type: 'settings', settings: this.settings })
       this.persistState()
     }
 
@@ -1188,5 +1211,15 @@ export class RoomsDO implements DurableObject {
       }
       this.draftsByPlayer.set(playerId, next)
     }
+  }
+
+  async hasAudienceEntitlement(accountId: string | null) {
+    if (!accountId || !this.env.DB) return false
+    const row = await this.env.DB.prepare(
+      'SELECT has_audience_mode FROM entitlements WHERE user_id = ?'
+    )
+      .bind(accountId)
+      .first()
+    return row?.has_audience_mode === 1
   }
 }

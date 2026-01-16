@@ -28,6 +28,54 @@ const fallbackCategories: Category[] = [
   { id: 'weirdest', name: 'Weirdest' }
 ]
 
+const categoryPresets = [
+  {
+    id: 'default',
+    label: 'Default pack',
+    names: fallbackCategories.map((category) => category.name)
+  },
+  {
+    id: 'creator-chaos',
+    label: 'Creator chaos',
+    names: [
+      'Unexpected talent',
+      'Plot twist',
+      'Best reaction',
+      'DIY hack',
+      'Glow up',
+      'Satisfying loop',
+      'Story time',
+      'Wild card'
+    ]
+  },
+  {
+    id: 'movie-night',
+    label: 'Movie night',
+    names: [
+      'Best scene',
+      'Main character energy',
+      'Villain moment',
+      'Soundtrack hit',
+      'Cinematic shot',
+      'Plot hole'
+    ]
+  },
+  {
+    id: 'sports-day',
+    label: 'Sports day',
+    names: [
+      'Highlight reel',
+      'Biggest comeback',
+      'Clutch moment',
+      'Worst miss',
+      'Crowd hype',
+      'Coach reaction'
+    ]
+  }
+]
+
+const lastCategoriesKey = 'cc:last_categories'
+
 function getWsBase() {
   const override = import.meta.env.VITE_ROOMS_WS_URL as string | undefined
   if (override && override.trim().length > 0) {
@@ -79,6 +127,14 @@ export default function Room() {
   const [submissionErrors, setSubmissionErrors] = useState<Record<string, string>>({})
   const [reportNotice, setReportNotice] = useState<string | null>(null)
   const [reportCount, setReportCount] = useState(0)
+  const [presetId, setPresetId] = useState('default')
+  const [loadedSavedDrafts, setLoadedSavedDrafts] = useState(false)
+  const [hasAudienceMode, setHasAudienceMode] = useState(false)
+  const [audienceStatus, setAudienceStatus] = useState<string | null>(null)
+  const [audienceLoading, setAudienceLoading] = useState(false)
+  const [centerTab, setCenterTab] = useState<'presets' | 'custom'>('presets')
+  const [mobilePanel, setMobilePanel] = useState<'main' | 'players' | 'side'>('main')
+  const [actionNotice, setActionNotice] = useState<string | null>(null)
   const socketRef = useRef<WebSocket | null>(null)
 
   useEffect(() => {
@@ -126,6 +182,9 @@ export default function Room() {
       if (data.type === 'timer') {
         setTimer(data.timer)
         setPhase(data.phase)
+      }
+      if (data.type === 'settings') {
+        setSettings(data.settings)
       }
       if (data.type === 'round_start') {
         setRound(data.round)
@@ -182,6 +241,11 @@ export default function Room() {
         setAccountUsername(data.user.username)
         setDisplayName(data.user.username)
       }
+      if (data?.user) {
+        fetchEntitlements()
+      } else {
+        setHasAudienceMode(false)
+      }
     })
   }, [])
 
@@ -220,10 +284,39 @@ export default function Room() {
   }, [roomId, displayName])
 
   useEffect(() => {
+    if (!roomId || loadedSavedDrafts || !isHost || phase !== 'lobby') return
+    if (!categoriesMatchPreset(categories, fallbackCategories)) return
+    const stored = window.localStorage.getItem(lastCategoriesKey)
+    if (!stored) return
+    try {
+      const names = JSON.parse(stored) as string[]
+      const cleaned = normalizeCategoryNames(names)
+      if (cleaned.length < 3 || cleaned.length > 12) return
+      setCategoryDrafts(buildCategoriesFromNames(cleaned))
+      setLoadedSavedDrafts(true)
+    } catch {
+      return
+    }
+  }, [roomId, loadedSavedDrafts, isHost, phase, categories])
+
+  useEffect(() => {
     if (!reportNotice) return
     const timeout = window.setTimeout(() => setReportNotice(null), 3000)
     return () => window.clearTimeout(timeout)
   }, [reportNotice])
+
+  useEffect(() => {
+    if (!actionNotice) return
+    const timeout = window.setTimeout(() => setActionNotice(null), 2500)
+    return () => window.clearTimeout(timeout)
+  }, [actionNotice])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('audience') === 'success') {
+      fetchEntitlements()
+    }
+  }, [])
 
   const sendHello = () => {
     const ws = socketRef.current
@@ -278,6 +371,53 @@ export default function Room() {
     ws.send(JSON.stringify({ type: 'reset_match' }))
   }
 
+  const copyInvite = async () => {
+    if (!roomId) return
+    const url = `${window.location.origin}/room/${roomId}`
+    try {
+      await navigator.clipboard.writeText(url)
+      setActionNotice('Invite link copied.')
+    } catch {
+      setActionNotice('Copy failed. Use the room code.')
+    }
+  }
+
+  const fetchEntitlements = async () => {
+    const res = await fetch('/api/entitlements')
+    if (!res.ok) return
+    const data = await res.json()
+    setHasAudienceMode(Boolean(data?.hasAudienceMode))
+  }
+
+  const purchaseAudienceMode = async () => {
+    if (!roomId) return
+    setAudienceLoading(true)
+    setAudienceStatus(null)
+    try {
+      const res = await fetch('/api/audience', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ roomId })
+      })
+      const data = await res.json()
+      if (!res.ok || !data?.url) {
+        setAudienceStatus(data?.error ?? 'Unable to start checkout.')
+        return
+      }
+      window.location.assign(data.url)
+    } catch {
+      setAudienceStatus('Unable to start checkout.')
+    } finally {
+      setAudienceLoading(false)
+    }
+  }
+
+  const setAudienceMode = (enabled: boolean) => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'set_audience_mode', enabled }))
+  }
+
   const updateCategoryName = (id: string, name: string) => {
     setCategoryDrafts((prev) =>
       prev.map((category) => (category.id === id ? { ...category, name } : category))
@@ -299,7 +439,15 @@ export default function Room() {
     const ws = socketRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return
     ws.send(JSON.stringify({ type: 'update_categories', categories: categoryDrafts }))
+    const names = normalizeCategoryNames(categoryDrafts.map((category) => category.name))
+    if (names.length >= 3 && names.length <= 12) {
+      window.localStorage.setItem(lastCategoriesKey, JSON.stringify(names))
+    }
     setEditingCategories(false)
+  }
+
+  const resetCategoryDrafts = () => {
+    setCategoryDrafts(categories.map((category) => ({ ...category })))
   }
 
   const exportHistory = () => {
@@ -329,6 +477,15 @@ export default function Room() {
   }
 
   const isHost = players.find((player) => player.id === playerId)?.isHost ?? false
+  const audienceEnabled = settings?.audienceModeEnabled ?? false
+  const canPurchaseAudience = isHost && Boolean(accountUsername)
+  const validCategoryCount = categoryDrafts.filter((category) => category.name.trim().length > 0).length
+  const categoryCountOk = validCategoryCount >= 3 && validCategoryCount <= 12
+  const maxPlayers = 10
+  const playerSlots: Array<Player | null> = [...players]
+  while (playerSlots.length < maxPlayers) {
+    playerSlots.push(null)
+  }
 
   const submitLink = (categoryId: string) => {
     const url = (submissionDrafts[categoryId] ?? '').trim()
@@ -366,7 +523,7 @@ export default function Room() {
 
   return (
     <div className="page room">
-      <header className="room-header">
+      <div className="room-status-bar">
         <div>
           <p className="eyebrow">Room</p>
           <h2>{roomId ?? 'unknown-room'}</h2>
@@ -375,319 +532,476 @@ export default function Room() {
             {players.find((player) => player.isHost)?.displayName ?? 'TBD'}
           </p>
         </div>
-        <div className="room-actions">
-          <button className="btn ghost">Invite link</button>
-          <Link className="btn outline" to="/">Leave</Link>
+        <div className="room-status-right">
+          <span className="phase-pill">{phase}</span>
         </div>
-      </header>
+      </div>
 
-      <section className="room-grid">
-        <div className="card reveal" style={{ ['--delay' as string]: '0.1s' }}>
-          <h3>Lobby</h3>
-          <label className="field">
-            Display name
-            <input
-              type="text"
-              placeholder="Pick a name"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-            />
-          </label>
-          <button className="btn outline" onClick={sendHello} disabled={!displayName.trim()}>
-            Update name
-          </button>
-          <ul className="player-list">
-            {players.map((player) => (
-              <li key={player.id}>
-                <span>
-                  {player.displayName}
-                  {player.isHost && <span className="host-badge">host</span>}
-                </span>
-                <span className={`pill ${player.isConnected ? 'online' : 'offline'}`}>
-                  {player.isConnected ? 'online' : 'offline'}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <div className="room-controls">
-            <button className="btn primary" onClick={startHunt} disabled={phase !== 'lobby' || !isHost}>
-              Start hunt
+      <div className="board-tabs">
+        <button
+          className={`tab-btn ${mobilePanel === 'main' ? 'active' : ''}`}
+          onClick={() => setMobilePanel('main')}
+        >
+          Main
+        </button>
+        <button
+          className={`tab-btn ${mobilePanel === 'players' ? 'active' : ''}`}
+          onClick={() => setMobilePanel('players')}
+        >
+          Players
+        </button>
+        <button
+          className={`tab-btn ${mobilePanel === 'side' ? 'active' : ''}`}
+          onClick={() => setMobilePanel('side')}
+        >
+          Chat/Help
+        </button>
+      </div>
+
+      <section className="board-grid" data-mobile={mobilePanel}>
+        <aside className="board-col players-col" data-panel="players">
+          <div className="panel-card players-panel">
+            <h3>PLAYERS {players.length}/{maxPlayers}</h3>
+            <div className="player-stack">
+              {playerSlots.map((player, index) =>
+                player ? (
+                  <div key={player.id} className="player-slot">
+                    <div className="player-avatar">{player.displayName.slice(0, 1).toUpperCase()}</div>
+                    <div className="player-meta">
+                      <span className="player-name">{player.displayName}</span>
+                      {player.isHost && <span className="host-badge">host</span>}
+                    </div>
+                    <span className={`pill ${player.isConnected ? 'online' : 'offline'}`}>
+                      {player.isConnected ? 'online' : 'offline'}
+                    </span>
+                  </div>
+                ) : (
+                  <div key={`empty-${index}`} className="player-slot placeholder">
+                    <div className="player-avatar">?</div>
+                    <span className="muted">Empty slot</span>
+                  </div>
+                )
+              )}
+            </div>
+            <label className="field">
+              Display name
+              <input
+                type="text"
+                placeholder="Pick a name"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+              />
+            </label>
+            <button className="btn outline" onClick={sendHello} disabled={!displayName.trim()}>
+              Update name
             </button>
-            <button
-              className="btn ghost"
-              onClick={() => setEditingCategories((prev) => !prev)}
-              disabled={!isHost || phase !== 'lobby'}
-            >
-              {editingCategories ? 'Close category editor' : 'Edit categories'}
-            </button>
-            <p className="muted">{isHost ? 'You are host.' : 'Host controls only.'}</p>
           </div>
-          {editingCategories && (
-            <div className="category-editor">
-              {categoryDrafts.map((category) => (
-                <div key={category.id} className="category-row">
-                  <input
-                    type="text"
-                    placeholder="Category name"
-                    value={category.name}
-                    onChange={(e) => updateCategoryName(category.id, e.target.value)}
-                  />
-                  <button className="btn ghost" onClick={() => removeCategoryDraft(category.id)}>
-                    Remove
+        </aside>
+
+        <main className="board-col center-col" data-panel="main">
+          {phase === 'lobby' ? (
+            <div className="center-stack">
+              <div className="panel-card">
+                <h3>Lobby controls</h3>
+                <div className="timer">
+                  <span className="timer-value">{displayTimer()}</span>
+                  <span className="timer-label">{timerLabel()}</span>
+                </div>
+                <div className="vote-strip">
+                  <button
+                    className={`btn outline ${voteIntent === 'higher' ? 'active' : ''}`}
+                    onClick={() => sendVote('higher')}
+                    disabled={phase !== 'lobby'}
+                  >
+                    Higher
+                  </button>
+                  <button
+                    className={`btn outline ${voteIntent === 'lower' ? 'active' : ''}`}
+                    onClick={() => sendVote('lower')}
+                    disabled={phase !== 'lobby'}
+                  >
+                    Lower
+                  </button>
+                  <button
+                    className={`btn outline ${voteIntent === 'neutral' ? 'active' : ''}`}
+                    onClick={() => sendVote('neutral')}
+                    disabled={phase !== 'lobby'}
+                  >
+                    Clear
                   </button>
                 </div>
-              ))}
-              <div className="category-actions">
-                <button className="btn outline" onClick={addCategoryDraft}>
-                  Add category
-                </button>
-                <button className="btn primary" onClick={saveCategories}>
-                  Save categories
-                </button>
+                <p className="muted">Vote recalculates every 5 seconds.</p>
+                <div className="vote-status">
+                  <span>Higher: {timer?.voteHigherCount ?? 0}</span>
+                  <span>Lower: {timer?.voteLowerCount ?? 0}</span>
+                  <span>Players: {timer?.playerCount ?? players.length}</span>
+                </div>
               </div>
-              <p className="muted">3–12 categories. Changes apply before hunt starts.</p>
-            </div>
-          )}
-        </div>
 
-        <div className="card reveal" style={{ ['--delay' as string]: '0.2s' }}>
-          <h3>Hunt timer</h3>
-          <div className="timer">
-            <span className="timer-value">{displayTimer()}</span>
-            <span className="timer-label">{timerLabel()}</span>
-          </div>
-          <div className="vote-strip">
-            <button
-              className={`btn outline ${voteIntent === 'higher' ? 'active' : ''}`}
-              onClick={() => sendVote('higher')}
-              disabled={phase !== 'lobby'}
-            >
-              Higher
-            </button>
-            <button
-              className={`btn outline ${voteIntent === 'lower' ? 'active' : ''}`}
-              onClick={() => sendVote('lower')}
-              disabled={phase !== 'lobby'}
-            >
-              Lower
-            </button>
-            <button
-              className={`btn outline ${voteIntent === 'neutral' ? 'active' : ''}`}
-              onClick={() => sendVote('neutral')}
-              disabled={phase !== 'lobby'}
-            >
-              Clear
-            </button>
-          </div>
-          <p className="muted">Vote recalculates every 5 seconds.</p>
-          <div className="vote-status">
-            <span>
-              Higher: {timer?.voteHigherCount ?? 0}
-            </span>
-            <span>
-              Lower: {timer?.voteLowerCount ?? 0}
-            </span>
-            <span>
-              Players: {timer?.playerCount ?? players.length}
-            </span>
-          </div>
-        </div>
-
-        <div className="card reveal" style={{ ['--delay' as string]: '0.25s' }}>
-          <h3>Round voting</h3>
-          {phase !== 'rounds' ? (
-            <p className="muted">Rounds start after hunt + intermission.</p>
-          ) : (
-            <>
-              <p className="muted">
-                Category: <strong>{round?.categoryName ?? '...'}</strong>
-              </p>
-              <div className="round-grid">
-                {(round?.entries ?? []).map((entry) => (
+              <div className="panel-card">
+                <div className="segment-tabs">
                   <button
-                    key={entry.id}
-                    className={`round-entry ${voteSelection === entry.id ? 'selected' : ''}`}
-                    onClick={() => sendVoteEntry(entry.id)}
-                    disabled={!!tiebreak || phase === 'results'}
+                    className={`segment ${centerTab === 'presets' ? 'active' : ''}`}
+                    onClick={() => setCenterTab('presets')}
                   >
-                    <span>{entry.label}</span>
-                    <span className="muted">{entry.url ?? 'TikTok link pending'}</span>
+                    Presets
                   </button>
-                ))}
-              </div>
-              <p className="muted">
-                Time left: {round?.remainingSeconds ?? 0}s
-              </p>
-              {tiebreak && (
-                <div className="tiebreak">
-                  <p className="muted">Tie-breaker: Rock–Paper–Scissors</p>
-                  <div className="tiebreak-grid">
-                    {(['rock', 'paper', 'scissors'] as RpsChoice[]).map((choice) => (
+                  <button
+                    className={`segment ${centerTab === 'custom' ? 'active' : ''}`}
+                    onClick={() => setCenterTab('custom')}
+                  >
+                    Custom settings
+                  </button>
+                </div>
+                {centerTab === 'presets' ? (
+                  <div className="preset-grid">
+                    {categoryPresets.map((preset) => (
                       <button
-                        key={choice}
-                        className={`btn outline ${tiebreakChoice === choice ? 'active' : ''}`}
-                        onClick={() => sendTiebreakChoice(choice)}
+                        key={preset.id}
+                        className={`preset-card ${presetId === preset.id ? 'active' : ''}`}
+                        onClick={() => {
+                          setPresetId(preset.id)
+                          setCategoryDrafts(buildCategoriesFromNames(preset.names))
+                        }}
                       >
-                        {choice}
+                        <h4>{preset.label}</h4>
+                        <p className="muted">
+                          {preset.names.slice(0, 4).join(', ')}
+                          {preset.names.length > 4 ? '...' : ''}
+                        </p>
+                        <span className="pill">{preset.names.length} categories</span>
                       </button>
                     ))}
                   </div>
-                  <p className="muted">Time left: {tiebreak.remainingSeconds ?? 0}s</p>
-                  {tiebreak.winnerEntryId && (
+                ) : (
+                  <div className="settings-list">
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <h4>Audience Mode</h4>
+                        <p className="muted">Host-only toggle. Unlock spectator features.</p>
+                      </div>
+                      <div className="setting-control">
+                        <button
+                          className="btn outline"
+                          onClick={() => setAudienceMode(!audienceEnabled)}
+                          disabled={!isHost || !hasAudienceMode}
+                        >
+                          {audienceEnabled ? 'Disable' : 'Enable'}
+                        </button>
+                        {!hasAudienceMode ? (
+                          <button
+                            className="btn ghost"
+                            onClick={purchaseAudienceMode}
+                            disabled={!canPurchaseAudience || audienceLoading}
+                          >
+                            {audienceLoading ? 'Checkout...' : 'Purchase ($30)'}
+                          </button>
+                        ) : (
+                          <span className="muted">Owned</span>
+                        )}
+                      </div>
+                    </div>
+                    {!canPurchaseAudience && (
+                      <p className="muted">Sign in to purchase Audience Mode.</p>
+                    )}
+                    {audienceStatus && <p className="muted">{audienceStatus}</p>}
+
+                    <div className="setting-row">
+                      <div className="setting-info">
+                        <h4>Categories</h4>
+                        <p className="muted">3–12 categories. Changes apply before hunt starts.</p>
+                      </div>
+                      <div className="setting-control">
+                        <button
+                          className="btn outline"
+                          onClick={() => setEditingCategories((prev) => !prev)}
+                          disabled={!isHost || phase !== 'lobby'}
+                        >
+                          {editingCategories ? 'Close editor' : 'Edit list'}
+                        </button>
+                        <button className="btn ghost" onClick={resetCategoryDrafts}>
+                          Reset
+                        </button>
+                      </div>
+                    </div>
+                    {editingCategories && (
+                      <div className="category-editor">
+                        {categoryDrafts.map((category) => (
+                          <div key={category.id} className="category-row">
+                            <input
+                              type="text"
+                              placeholder="Category name"
+                              value={category.name}
+                              onChange={(e) => updateCategoryName(category.id, e.target.value)}
+                            />
+                            <button className="btn ghost" onClick={() => removeCategoryDraft(category.id)}>
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                        <div className="category-actions">
+                          <button className="btn outline" onClick={addCategoryDraft} disabled={validCategoryCount >= 12}>
+                            Add category
+                          </button>
+                          <button className="btn primary" onClick={saveCategories} disabled={!categoryCountOk}>
+                            Save categories
+                          </button>
+                        </div>
+                        <p className="muted">
+                          {validCategoryCount} ready. Need 3-12. Changes apply before hunt starts.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="center-stack">
+              <div className="panel-card">
+                <h3>Game flow</h3>
+                <div className="timer">
+                  <span className="timer-value">{displayTimer()}</span>
+                  <span className="timer-label">{timerLabel()}</span>
+                </div>
+                <p className="muted">Phase: {phase}</p>
+              </div>
+
+              {phase === 'hunt' && (
+                <div className="panel-card">
+                  <h3>Submissions</h3>
+                  <div className="category-grid">
+                    {categories.map((category) => (
+                      <div key={category.id} className="category-card">
+                        <div>
+                          <span>{category.name}</span>
+                          {submissionSaved[category.id] && (
+                            <p className="muted">Saved: {submissionSaved[category.id]}</p>
+                          )}
+                          {submissionDrafts[category.id] && !submissionSaved[category.id] && (
+                            <p className="muted">Draft saved locally.</p>
+                          )}
+                          {!submissionDrafts[category.id] && !submissionSaved[category.id] && (
+                            <p className="muted">No submission yet.</p>
+                          )}
+                          {submissionErrors[category.id] && (
+                            <p className="error">{submissionErrors[category.id]}</p>
+                          )}
+                        </div>
+                        <div className="category-actions">
+                          <input
+                            type="text"
+                            placeholder="Paste TikTok URL"
+                            value={submissionDrafts[category.id] ?? ''}
+                            onChange={(e) =>
+                              setSubmissionDrafts((prev) => ({ ...prev, [category.id]: e.target.value }))
+                            }
+                            onBlur={(e) => saveDraft(category.id, e.target.value)}
+                            disabled={phase !== 'hunt'}
+                          />
+                          <button className="btn ghost" onClick={() => submitLink(category.id)} disabled={phase !== 'hunt'}>
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {phase === 'rounds' && (
+                <div className="panel-card">
+                  <h3>Round voting</h3>
+                  <p className="muted">
+                    Category: <strong>{round?.categoryName ?? '...'}</strong>
+                  </p>
+                  <div className="round-grid">
+                    {(round?.entries ?? []).map((entry) => (
+                      <button
+                        key={entry.id}
+                        className={`round-entry ${voteSelection === entry.id ? 'selected' : ''}`}
+                        onClick={() => sendVoteEntry(entry.id)}
+                        disabled={!!tiebreak || phase === 'results'}
+                      >
+                        <span>{entry.label}</span>
+                        <span className="muted">{entry.url ?? 'No submission yet'}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="muted">Time left: {round?.remainingSeconds ?? 0}s</p>
+                  {tiebreak && (
+                    <div className="tiebreak">
+                      <p className="muted">Tie-breaker: Rock–Paper–Scissors</p>
+                      <div className="tiebreak-grid">
+                        {(['rock', 'paper', 'scissors'] as RpsChoice[]).map((choice) => (
+                          <button
+                            key={choice}
+                            className={`btn outline ${tiebreakChoice === choice ? 'active' : ''}`}
+                            onClick={() => sendTiebreakChoice(choice)}
+                          >
+                            {choice}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="muted">Time left: {tiebreak.remainingSeconds ?? 0}s</p>
+                      {tiebreak.winnerEntryId && (
+                        <div className="round-result">
+                          <p>
+                            Tie-break winner:{' '}
+                            <strong>{getWinnerLabelFromEntries(tiebreak.winnerEntryId, round?.entries ?? [])}</strong>
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {roundResult && (
                     <div className="round-result">
                       <p>
-                        Tie-break winner:{' '}
-                        <strong>{getWinnerLabelFromEntries(tiebreak.winnerEntryId, round?.entries ?? [])}</strong>
+                        Winner: <strong>{getWinnerLabel(roundResult, round?.entries ?? [])}</strong>
                       </p>
                     </div>
                   )}
                 </div>
               )}
-              {roundResult && (
-                <div className="round-result">
-                  <p>
-                    Winner: <strong>{getWinnerLabel(roundResult, round?.entries ?? [])}</strong>
-                  </p>
-                </div>
-              )}
-            </>
-          )}
-        </div>
 
-        <div className="card reveal" style={{ ['--delay' as string]: '0.28s' }}>
-          <h3>Scoreboard</h3>
-          {scoreboard.length === 0 ? (
-            <p className="muted">No wins yet.</p>
-          ) : (
-            <div className="scoreboard">
-              {scoreboard.map((entry, index) => (
-                <div key={entry.entryId} className={`score-row ${index === 0 ? 'leader' : ''}`}>
-                  <span>{entry.displayName}</span>
-                  <span>{entry.wins}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {phase === 'results' && (
-          <div className="results-panel">
-            <div className="results-card">
-              <h3>Match results</h3>
-              {history.length === 0 ? (
-                <p className="muted">No rounds played.</p>
-              ) : (
-                <div className="history">
-                  {history.map((entry) => (
-                    <div key={entry.categoryId} className="history-row">
-                      <span>{entry.categoryName}</span>
-                      <span>{entry.winnerName}</span>
+              {phase === 'results' && (
+                <div className="panel-card">
+                  <h3>Match results</h3>
+                  {history.length === 0 ? (
+                    <p className="muted">No rounds played.</p>
+                  ) : (
+                    <div className="history">
+                      {history.map((entry) => (
+                        <div key={entry.categoryId} className="history-row">
+                          <span>{entry.categoryName}</span>
+                          <span>{entry.winnerName}</span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+                  <div className="results-share">
+                    <label className="field">
+                      Share results
+                      <textarea readOnly value={buildShareSummary(scoreboard, history)} />
+                    </label>
+                    <div className="results-actions">
+                      <button className="btn outline" onClick={copyShareText}>
+                        Copy text
+                      </button>
+                      <button className="btn outline" onClick={exportHistory}>
+                        Download JSON
+                      </button>
+                    </div>
+                  </div>
+                  <button className="btn primary" onClick={resetMatch} disabled={!isHost}>
+                    Play again
+                  </button>
                 </div>
               )}
-              <div className="results-share">
-                <label className="field">
-                  Share results
-                  <textarea readOnly value={buildShareSummary(scoreboard, history)} />
-                </label>
-                <div className="results-actions">
-                  <button className="btn outline" onClick={copyShareText}>
-                    Copy text
-                  </button>
-                  <button className="btn outline" onClick={exportHistory}>
-                    Download JSON
-                  </button>
-                </div>
+
+              <div className="panel-card">
+                <h3>Scoreboard</h3>
+                {scoreboard.length === 0 ? (
+                  <p className="muted">No wins yet.</p>
+                ) : (
+                  <div className="scoreboard">
+                    {scoreboard.map((entry, index) => (
+                      <div key={entry.entryId} className={`score-row ${index === 0 ? 'leader' : ''}`}>
+                        <span>{entry.displayName}</span>
+                        <span>{entry.wins}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <button className="btn primary" onClick={resetMatch} disabled={!isHost}>
-                Play again
-              </button>
+            </div>
+          )}
+        </main>
+
+        <aside className="board-col side-col" data-panel="side">
+          <div className="panel-card">
+            <h3>How to play</h3>
+            <div className="help-graphic" />
+            <p className="muted">Vote the timer, hunt clips, then crown each category champion.</p>
+            <div className="help-dots">
+              <span className="dot active" />
+              <span className="dot" />
+              <span className="dot" />
             </div>
           </div>
-        )}
-
-        <div className="card reveal" style={{ ['--delay' as string]: '0.3s' }}>
-          <h3>Categories</h3>
-          {phase !== 'hunt' && <p className="muted">Submissions unlock during hunt.</p>}
-          <div className="category-grid">
-            {categories.map((category) => (
-              <div key={category.id} className="category-card">
-                <div>
-                  <span>{category.name}</span>
-                  {submissionSaved[category.id] && (
-                    <p className="muted">Saved: {submissionSaved[category.id]}</p>
-                  )}
-                  {submissionDrafts[category.id] && !submissionSaved[category.id] && (
-                    <p className="muted">Draft saved locally.</p>
-                  )}
-                  {submissionErrors[category.id] && (
-                    <p className="error">{submissionErrors[category.id]}</p>
-                  )}
-                </div>
-                <div className="category-actions">
-                  <input
-                    type="text"
-                    placeholder="Paste TikTok URL"
-                    value={submissionDrafts[category.id] ?? ''}
-                    onChange={(e) =>
-                      setSubmissionDrafts((prev) => ({ ...prev, [category.id]: e.target.value }))
-                    }
-                    onBlur={(e) => saveDraft(category.id, e.target.value)}
-                    disabled={phase !== 'hunt'}
-                  />
-                  <button className="btn ghost" onClick={() => submitLink(category.id)} disabled={phase !== 'hunt'}>
-                    Save
-                  </button>
-                </div>
-              </div>
-            ))}
+          <div className="panel-card">
+            <h3>Chat</h3>
+            <div className="chat-window">
+              {chat.length === 0 ? (
+                <p className="muted">Chat is always on. Say hi.</p>
+              ) : (
+                chat.map((line) => (
+                  <div className="chat-line" key={line.id}>
+                    <span>{line.name}:</span> {line.message}
+                    <button className="btn ghost" onClick={() => sendReport(line.id)}>
+                      Report
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            {reportNotice && <p className="muted">{reportNotice}</p>}
+            <p className="muted">Reports logged: {reportCount}</p>
+            <form
+              className="chat-form"
+              onSubmit={(e) => {
+                e.preventDefault()
+                sendChat()
+              }}
+            >
+              <input
+                type="text"
+                placeholder="Type message"
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+              />
+              <button className="btn primary" type="submit" disabled={!message.trim()}>
+                Send
+              </button>
+            </form>
           </div>
-        </div>
-
-        <div className="card reveal" style={{ ['--delay' as string]: '0.4s' }}>
-          <h3>Chat</h3>
-          <div className="chat-window">
-            {chat.length === 0 ? (
-              <p className="muted">Chat is always on. Say hi.</p>
-            ) : (
-              chat.map((line) => (
-                <div className="chat-line" key={line.id}>
-                  <span>{line.name}:</span> {line.message}
-                  <button className="btn ghost" onClick={() => sendReport(line.id)}>
-                    Report
-                  </button>
-                </div>
-              ))
-            )}
+          <div className="panel-card">
+            <h3>Sponsor</h3>
+            <div className="sponsor-slot">Buy this slot</div>
+            <p className="muted">One sponsor per match. No popups.</p>
+            <Link className="muted" to="/donate">
+              Support the site
+            </Link>
           </div>
-          {reportNotice && <p className="muted">{reportNotice}</p>}
-          <p className="muted">Reports logged: {reportCount}</p>
-          <form
-            className="chat-form"
-            onSubmit={(e) => {
-              e.preventDefault()
-              sendChat()
-            }}
-          >
-            <input
-              type="text"
-              placeholder="Type message"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-            />
-            <button className="btn primary" type="submit" disabled={!message.trim()}>
-              Send
-            </button>
-          </form>
-        </div>
-
-        <div className="card reveal" style={{ ['--delay' as string]: '0.5s' }}>
-          <h3>Sponsor</h3>
-          <div className="sponsor-slot">Buy this slot</div>
-          <p className="muted">One sponsor per match. No popups.</p>
-        </div>
+        </aside>
       </section>
+
+      <div className="board-actions">
+        <div className="actions-left">
+          <span className="room-pill">Room code: {roomId ?? '---'}</span>
+          <button className="btn outline action-btn" onClick={copyInvite} disabled={!roomId}>
+            <span className="btn-icon">INV</span>
+            Invite
+          </button>
+          {actionNotice && <span className="muted">{actionNotice}</span>}
+        </div>
+        <div className="actions-right">
+          {phase === 'lobby' && (
+            <button
+              className="btn primary action-btn"
+              onClick={startHunt}
+              disabled={phase !== 'lobby' || !isHost}
+            >
+              <span className="btn-icon">GO</span>
+              Start
+            </button>
+          )}
+          <Link className="btn outline action-btn" to="/">
+            <span className="btn-icon">OUT</span>
+            Leave
+          </Link>
+        </div>
+      </div>
     </div>
   )
 }
@@ -702,6 +1016,31 @@ function getWinnerLabelFromEntries(winnerId: string, entries: RoundEntry[]) {
   return winner?.label ?? 'TBD'
 }
 
+function buildCategoriesFromNames(names: string[]) {
+  const stamp = Date.now()
+  return names.map((name, index) => ({
+    id: createCategoryId(name, stamp, index),
+    name
+  }))
+}
+
+function createCategoryId(name: string, stamp: number, index: number) {
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 32)
+  return base.length > 0 ? base : `cat-${stamp}-${index}`
+}
+
+function normalizeCategoryNames(names: string[]) {
+  if (!Array.isArray(names)) return []
+  return names
+    .map((name) => (typeof name === 'string' ? name.trim() : ''))
+    .filter((name) => name.length > 0)
+    .map((name) => name.slice(0, 32))
+}
+
+function categoriesMatchPreset(categories: Category[], preset: Category[]) {
+  if (categories.length !== preset.length) return false
+  return categories.every((category, index) => category.name === preset[index]?.name)
+}
 
 function mergeDrafts(existing: Record<string, string>, incoming: Record<string, string>) {
   const next = { ...incoming }

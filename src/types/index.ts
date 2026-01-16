@@ -20,6 +20,7 @@ export interface Settings {
   defaultTime: number
   voteTickSeconds: number
   voteThreshold: number
+  audienceModeEnabled: boolean
 }
 
 export interface Room {
@@ -129,6 +130,7 @@ export type ClientMessage =
   | { type: 'vote_submission'; entryId: string }
   | { type: 'rps_choice'; choice: RpsChoice }
   | { type: 'report'; messageId: string }
+  | { type: 'set_audience_mode'; enabled: boolean }
 
 export type ServerMessage =
   | { type: 'welcome'; sessionToken: string; playerId: string; roomId: string; phase: Phase; players: Player[]; chat: ChatMessage[]; settings: Settings; timer: TimerState; categories: Category[]; scoreboard: ScoreboardEntry[]; history: RoundHistoryEntry[]; drafts: DraftsByCategory; reportCount: number }
@@ -142,6 +144,7 @@ export type ServerMessage =
   | { type: 'scoreboard'; scoreboard: ScoreboardEntry[]; history: RoundHistoryEntry[] }
   | { type: 'categories'; categories: Category[] }
   | { type: 'drafts'; drafts: DraftsByCategory }
+  | { type: 'settings'; settings: Settings }
   | { type: 'report_received'; messageId: string }
   | { type: 'submission_saved'; categoryId: string; url: string; updatedAt: number }
   | { type: 'error'; message: string }
