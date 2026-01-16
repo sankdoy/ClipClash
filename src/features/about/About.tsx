@@ -1,5 +1,5 @@
 import React from 'react'
-import readme from '../../README.md?raw'
+import readme from '../../../README.md?raw'
 
 function extractSummary(md: string) {
   const lines = md.split('\n').map(l => l.trim())

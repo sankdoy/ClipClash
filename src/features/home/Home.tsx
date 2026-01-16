@@ -1,12 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getHealth } from '../utils/api'
-
-const publicRoomsSeed = [
-  { id: 'sunset-7', name: 'Sunset Arena', players: 6 },
-  { id: 'glow-3', name: 'Glow Circuit', players: 4 },
-  { id: 'campfire-9', name: 'Campfire Finals', players: 9 }
-]
+import { getHealth, getRooms } from '../../utils/api'
 
 function makeRoomId() {
   return `room-${Math.random().toString(36).slice(2, 8)}`
@@ -16,8 +10,9 @@ export default function Home() {
   const [status, setStatus] = useState<string>('loading')
   const [displayName, setDisplayName] = useState('')
   const [roomCode, setRoomCode] = useState('')
+  const [publicRooms, setPublicRooms] = useState<Array<{ id: string; name: string; players: number; capacity: number }>>([])
+  const [roomsStatus, setRoomsStatus] = useState<'loading' | 'ok' | 'error'>('loading')
   const navigate = useNavigate()
-  const publicRooms = useMemo(() => publicRoomsSeed, [])
 
   useEffect(() => {
     let mounted = true
@@ -25,6 +20,22 @@ export default function Home() {
       if (!mounted) return
       setStatus(d?.ok ? 'API ok' : 'API unavailable')
     }).catch(() => setStatus('API unavailable'))
+    return () => { mounted = false }
+  }, [])
+
+  useEffect(() => {
+    let mounted = true
+    getRooms()
+      .then((data) => {
+        if (!mounted) return
+        if (data?.rooms) {
+          setPublicRooms(data.rooms)
+          setRoomsStatus('ok')
+        } else {
+          setRoomsStatus('error')
+        }
+      })
+      .catch(() => setRoomsStatus('error'))
     return () => { mounted = false }
   }, [])
 
@@ -88,14 +99,16 @@ export default function Home() {
           <div className="panel-card reveal" style={{ ['--delay' as string]: '0.2s' }}>
             <h3>Public rooms live now</h3>
             <div className="room-list">
-              {publicRooms.map((room) => (
+              {roomsStatus === 'loading' && <p className="muted">Loading rooms...</p>}
+              {roomsStatus === 'error' && <p className="muted">Rooms unavailable.</p>}
+              {roomsStatus === 'ok' && publicRooms.map((room) => (
                 <button
                   key={room.id}
                   className="room-chip"
                   onClick={() => navigate(`/room/${room.id}`)}
                 >
                   <span>{room.name}</span>
-                  <span>{room.players}/10</span>
+                  <span>{room.players}/{room.capacity}</span>
                 </button>
               ))}
             </div>

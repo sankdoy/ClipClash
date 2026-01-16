@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type {
+  Category,
   ChatMessage,
   Phase,
   Player,
@@ -14,9 +15,9 @@ import type {
   Settings,
   TieBreakState,
   TimerState
-} from '../types'
+} from '../../types'
 
-const defaultCategories = [
+const fallbackCategories: Category[] = [
   { id: 'cutest', name: 'Cutest' },
   { id: 'funniest', name: 'Funniest' },
   { id: 'out-of-pocket', name: 'Most out of pocket' },
@@ -55,6 +56,9 @@ export default function Room() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [timer, setTimer] = useState<TimerState | null>(null)
   const [phase, setPhase] = useState<Phase>('lobby')
+  const [categories, setCategories] = useState<Category[]>(fallbackCategories)
+  const [editingCategories, setEditingCategories] = useState(false)
+  const [categoryDrafts, setCategoryDrafts] = useState<Category[]>(fallbackCategories)
   const [round, setRound] = useState<RoundState | null>(null)
   const [roundResult, setRoundResult] = useState<RoundResult | null>(null)
   const [tiebreak, setTiebreak] = useState<TieBreakState | null>(null)
@@ -63,13 +67,15 @@ export default function Room() {
   const [scoreboard, setScoreboard] = useState<ScoreboardEntry[]>([])
   const [history, setHistory] = useState<RoundHistoryEntry[]>([])
   const [displayName, setDisplayName] = useState('')
-  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [playerId, setPlayerId] = useState<string | null>(null)
+  const [sessionToken, setSessionToken] = useState<string | null>(null)
   const [message, setMessage] = useState('')
   const [voteIntent, setVoteIntent] = useState<'higher' | 'lower' | 'neutral'>('neutral')
   const [submissionDrafts, setSubmissionDrafts] = useState<Record<string, string>>({})
   const [submissionSaved, setSubmissionSaved] = useState<Record<string, string>>({})
   const [submissionErrors, setSubmissionErrors] = useState<Record<string, string>>({})
-  const categories = useMemo(() => defaultCategories, [])
+  const [reportNotice, setReportNotice] = useState<string | null>(null)
+  const [reportCount, setReportCount] = useState(0)
   const socketRef = useRef<WebSocket | null>(null)
 
   useEffect(() => {
@@ -77,20 +83,36 @@ export default function Room() {
     const ws = new WebSocket(`${getWsBase()}/room/${roomId}`)
     socketRef.current = ws
 
-    ws.addEventListener('open', () => setIsConnected(true))
+    ws.addEventListener('open', () => {
+      setIsConnected(true)
+      const storedToken = window.localStorage.getItem(`tto:sessionToken:${roomId}`)
+      const storedName = window.localStorage.getItem(`tto:displayName:${roomId}`) ?? ''
+      if (storedName && !displayName) {
+        setDisplayName(storedName)
+      }
+      ws.send(JSON.stringify({ type: 'hello', sessionToken: storedToken ?? undefined }))
+      if (storedName) {
+        ws.send(JSON.stringify({ type: 'update_name', name: storedName }))
+      }
+    })
     ws.addEventListener('close', () => setIsConnected(false))
     ws.addEventListener('message', (event) => {
       const data = safeParseMessage(event.data)
       if (!data) return
       if (data.type === 'welcome') {
-        setSessionId(data.sessionId)
+        setPlayerId(data.playerId)
+        setSessionToken(data.sessionToken)
         setPlayers(data.players)
         setChat(data.chat)
         setSettings(data.settings)
         setTimer(data.timer)
         setPhase(data.phase)
+        setCategories(data.categories)
+        setCategoryDrafts(data.categories)
         setScoreboard(data.scoreboard)
         setHistory(data.history)
+        setSubmissionDrafts((prev) => mergeDrafts(prev, data.drafts))
+        setReportCount(data.reportCount)
       }
       if (data.type === 'presence') {
         setPlayers(data.players)
@@ -116,6 +138,13 @@ export default function Room() {
         setScoreboard(data.scoreboard)
         setHistory(data.history)
       }
+      if (data.type === 'categories') {
+        setCategories(data.categories)
+        setCategoryDrafts(data.categories)
+      }
+      if (data.type === 'drafts') {
+        setSubmissionDrafts((prev) => mergeDrafts(prev, data.drafts))
+      }
       if (data.type === 'tiebreak_start') {
         setTiebreak(data.tiebreak)
       }
@@ -129,6 +158,13 @@ export default function Room() {
           delete next[data.categoryId]
           return next
         })
+      }
+      if (data.type === 'report_received') {
+        setReportNotice('Report received. Thanks.')
+        setReportCount((prev) => prev + 1)
+      }
+      if (data.type === 'error') {
+        setReportNotice(data.message)
       }
     })
 
@@ -154,10 +190,26 @@ export default function Room() {
     window.localStorage.setItem(`tto:drafts:${roomId}`, JSON.stringify(submissionDrafts))
   }, [roomId, submissionDrafts])
 
+  useEffect(() => {
+    if (!roomId || !sessionToken) return
+    window.localStorage.setItem(`tto:sessionToken:${roomId}`, sessionToken)
+  }, [roomId, sessionToken])
+
+  useEffect(() => {
+    if (!roomId) return
+    window.localStorage.setItem(`tto:displayName:${roomId}`, displayName)
+  }, [roomId, displayName])
+
+  useEffect(() => {
+    if (!reportNotice) return
+    const timeout = window.setTimeout(() => setReportNotice(null), 3000)
+    return () => window.clearTimeout(timeout)
+  }, [reportNotice])
+
   const sendHello = () => {
     const ws = socketRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return
-    ws.send(JSON.stringify({ type: 'hello', name: displayName }))
+    ws.send(JSON.stringify({ type: 'update_name', name: displayName }))
   }
 
   const sendChat = () => {
@@ -165,6 +217,13 @@ export default function Room() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return
     ws.send(JSON.stringify({ type: 'chat', message }))
     setMessage('')
+  }
+
+  const sendReport = (messageId: string) => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'report', messageId }))
+    setReportNotice('Report sent.')
   }
 
   const sendVote = (direction: 'higher' | 'lower' | 'neutral') => {
@@ -200,7 +259,57 @@ export default function Room() {
     ws.send(JSON.stringify({ type: 'reset_match' }))
   }
 
-  const isHost = players.find((player) => player.id === sessionId)?.isHost ?? false
+  const updateCategoryName = (id: string, name: string) => {
+    setCategoryDrafts((prev) =>
+      prev.map((category) => (category.id === id ? { ...category, name } : category))
+    )
+  }
+
+  const addCategoryDraft = () => {
+    setCategoryDrafts((prev) => [
+      ...prev,
+      { id: `cat-${Date.now()}`, name: '' }
+    ])
+  }
+
+  const removeCategoryDraft = (id: string) => {
+    setCategoryDrafts((prev) => prev.filter((category) => category.id !== id))
+  }
+
+  const saveCategories = () => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'update_categories', categories: categoryDrafts }))
+    setEditingCategories(false)
+  }
+
+  const exportHistory = () => {
+    const payload = {
+      roomId,
+      scoreboard,
+      history,
+      generatedAt: new Date().toISOString()
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `tiktok-olympics-${roomId ?? 'room'}-results.json`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const copyShareText = async () => {
+    const summary = buildShareSummary(scoreboard, history)
+    try {
+      await navigator.clipboard.writeText(summary)
+      setReportNotice('Results copied to clipboard.')
+    } catch {
+      setReportNotice('Copy failed. Select text manually.')
+    }
+  }
+
+  const isHost = players.find((player) => player.id === playerId)?.isHost ?? false
 
   const submitLink = (categoryId: string) => {
     const url = (submissionDrafts[categoryId] ?? '').trim()
@@ -211,6 +320,12 @@ export default function Room() {
     const ws = socketRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return
     ws.send(JSON.stringify({ type: 'submit_submission', categoryId, url }))
+  }
+
+  const saveDraft = (categoryId: string, url: string) => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'save_draft', categoryId, url }))
   }
 
   const displayTimer = () => {
@@ -265,8 +380,13 @@ export default function Room() {
           <ul className="player-list">
             {players.map((player) => (
               <li key={player.id}>
-                <span>{player.displayName}</span>
-                <span className="pill">{player.isConnected ? 'online' : 'offline'}</span>
+                <span>
+                  {player.displayName}
+                  {player.isHost && <span className="host-badge">host</span>}
+                </span>
+                <span className={`pill ${player.isConnected ? 'online' : 'offline'}`}>
+                  {player.isConnected ? 'online' : 'offline'}
+                </span>
               </li>
             ))}
           </ul>
@@ -274,11 +394,41 @@ export default function Room() {
             <button className="btn primary" onClick={startHunt} disabled={phase !== 'lobby' || !isHost}>
               Start hunt
             </button>
-            <button className="btn ghost" disabled>
-              Edit categories
+            <button
+              className="btn ghost"
+              onClick={() => setEditingCategories((prev) => !prev)}
+              disabled={!isHost || phase !== 'lobby'}
+            >
+              {editingCategories ? 'Close category editor' : 'Edit categories'}
             </button>
             <p className="muted">{isHost ? 'You are host.' : 'Host controls only.'}</p>
           </div>
+          {editingCategories && (
+            <div className="category-editor">
+              {categoryDrafts.map((category) => (
+                <div key={category.id} className="category-row">
+                  <input
+                    type="text"
+                    placeholder="Category name"
+                    value={category.name}
+                    onChange={(e) => updateCategoryName(category.id, e.target.value)}
+                  />
+                  <button className="btn ghost" onClick={() => removeCategoryDraft(category.id)}>
+                    Remove
+                  </button>
+                </div>
+              ))}
+              <div className="category-actions">
+                <button className="btn outline" onClick={addCategoryDraft}>
+                  Add category
+                </button>
+                <button className="btn primary" onClick={saveCategories}>
+                  Save categories
+                </button>
+              </div>
+              <p className="muted">3–12 categories. Changes apply before hunt starts.</p>
+            </div>
+          )}
         </div>
 
         <div className="card reveal" style={{ ['--delay' as string]: '0.2s' }}>
@@ -391,8 +541,8 @@ export default function Room() {
             <p className="muted">No wins yet.</p>
           ) : (
             <div className="scoreboard">
-              {scoreboard.map((entry) => (
-                <div key={entry.entryId} className="score-row">
+              {scoreboard.map((entry, index) => (
+                <div key={entry.entryId} className={`score-row ${index === 0 ? 'leader' : ''}`}>
                   <span>{entry.displayName}</span>
                   <span>{entry.wins}</span>
                 </div>
@@ -417,6 +567,20 @@ export default function Room() {
                   ))}
                 </div>
               )}
+              <div className="results-share">
+                <label className="field">
+                  Share results
+                  <textarea readOnly value={buildShareSummary(scoreboard, history)} />
+                </label>
+                <div className="results-actions">
+                  <button className="btn outline" onClick={copyShareText}>
+                    Copy text
+                  </button>
+                  <button className="btn outline" onClick={exportHistory}>
+                    Download JSON
+                  </button>
+                </div>
+              </div>
               <button className="btn primary" onClick={resetMatch} disabled={!isHost}>
                 Play again
               </button>
@@ -426,6 +590,7 @@ export default function Room() {
 
         <div className="card reveal" style={{ ['--delay' as string]: '0.3s' }}>
           <h3>Categories</h3>
+          {phase !== 'hunt' && <p className="muted">Submissions unlock during hunt.</p>}
           <div className="category-grid">
             {categories.map((category) => (
               <div key={category.id} className="category-card">
@@ -449,8 +614,10 @@ export default function Room() {
                     onChange={(e) =>
                       setSubmissionDrafts((prev) => ({ ...prev, [category.id]: e.target.value }))
                     }
+                    onBlur={(e) => saveDraft(category.id, e.target.value)}
+                    disabled={phase !== 'hunt'}
                   />
-                  <button className="btn ghost" onClick={() => submitLink(category.id)}>
+                  <button className="btn ghost" onClick={() => submitLink(category.id)} disabled={phase !== 'hunt'}>
                     Save
                   </button>
                 </div>
@@ -468,10 +635,15 @@ export default function Room() {
               chat.map((line) => (
                 <div className="chat-line" key={line.id}>
                   <span>{line.name}:</span> {line.message}
+                  <button className="btn ghost" onClick={() => sendReport(line.id)}>
+                    Report
+                  </button>
                 </div>
               ))
             )}
           </div>
+          {reportNotice && <p className="muted">{reportNotice}</p>}
+          <p className="muted">Reports logged: {reportCount}</p>
           <form
             className="chat-form"
             onSubmit={(e) => {
@@ -514,4 +686,32 @@ function getWinnerLabelFromEntries(winnerId: string, entries: RoundEntry[]) {
 function isValidTikTokUrl(url: string) {
   if (!url) return false
   return url.toLowerCase().includes('tiktok.com')
+}
+
+function mergeDrafts(existing: Record<string, string>, incoming: Record<string, string>) {
+  const next = { ...incoming }
+  for (const [key, value] of Object.entries(existing)) {
+    if (value && value.trim().length > 0) {
+      next[key] = value
+    }
+  }
+  return next
+}
+
+function buildShareSummary(scoreboard: ScoreboardEntry[], history: RoundHistoryEntry[]) {
+  const lines: string[] = []
+  lines.push('TikTok Olympics results')
+  if (scoreboard.length > 0) {
+    lines.push('Scoreboard:')
+    scoreboard.forEach((entry, index) => {
+      lines.push(`${index + 1}. ${entry.displayName} — ${entry.wins} win${entry.wins === 1 ? '' : 's'}`)
+    })
+  }
+  if (history.length > 0) {
+    lines.push('Rounds:')
+    history.forEach((entry) => {
+      lines.push(`- ${entry.categoryName}: ${entry.winnerName}`)
+    })
+  }
+  return lines.join('\n')
 }

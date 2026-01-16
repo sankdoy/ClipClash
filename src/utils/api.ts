@@ -7,3 +7,13 @@ export async function getHealth() {
     return null
   }
 }
+
+export async function getRooms() {
+  try {
+    const res = await fetch('/api/rooms')
+    if (!res.ok) return null
+    return await res.json()
+  } catch (e) {
+    return null
+  }
+}

@@ -11,6 +11,7 @@ export interface Player {
   joinedAt: number
   isHost: boolean
   isConnected: boolean
+  lastSeenAt?: number
 }
 
 export interface Settings {
@@ -88,6 +89,8 @@ export interface RoundHistoryEntry {
   winnerName: string
 }
 
+export type DraftsByCategory = Record<string, string>
+
 export interface SponsorSlot {
   status: 'empty' | 'filled'
   label: string
@@ -114,17 +117,21 @@ export interface TimerState {
 }
 
 export type ClientMessage =
-  | { type: 'hello'; name?: string }
+  | { type: 'hello'; sessionToken?: string }
   | { type: 'chat'; message: string }
   | { type: 'vote_time'; direction: 'higher' | 'lower' | 'neutral' }
   | { type: 'start_hunt' }
   | { type: 'reset_match' }
+  | { type: 'update_categories'; categories: Category[] }
+  | { type: 'update_name'; name: string }
+  | { type: 'save_draft'; categoryId: string; url: string }
   | { type: 'submit_submission'; categoryId: string; url: string }
   | { type: 'vote_submission'; entryId: string }
   | { type: 'rps_choice'; choice: RpsChoice }
+  | { type: 'report'; messageId: string }
 
 export type ServerMessage =
-  | { type: 'welcome'; sessionId: string; roomId: string; phase: Phase; players: Player[]; chat: ChatMessage[]; settings: Settings; timer: TimerState; scoreboard: ScoreboardEntry[]; history: RoundHistoryEntry[] }
+  | { type: 'welcome'; sessionToken: string; playerId: string; roomId: string; phase: Phase; players: Player[]; chat: ChatMessage[]; settings: Settings; timer: TimerState; categories: Category[]; scoreboard: ScoreboardEntry[]; history: RoundHistoryEntry[]; drafts: DraftsByCategory; reportCount: number }
   | { type: 'presence'; players: Player[] }
   | { type: 'chat'; chat: ChatMessage }
   | { type: 'timer'; phase: Phase; timer: TimerState }
@@ -133,5 +140,8 @@ export type ServerMessage =
   | { type: 'tiebreak_start'; tiebreak: TieBreakState }
   | { type: 'tiebreak_result'; tiebreak: TieBreakState }
   | { type: 'scoreboard'; scoreboard: ScoreboardEntry[]; history: RoundHistoryEntry[] }
+  | { type: 'categories'; categories: Category[] }
+  | { type: 'drafts'; drafts: DraftsByCategory }
+  | { type: 'report_received'; messageId: string }
   | { type: 'submission_saved'; categoryId: string; url: string; updatedAt: number }
   | { type: 'error'; message: string }

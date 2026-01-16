@@ -1,8 +1,8 @@
 import React from 'react'
 import { Routes, Route, Link } from 'react-router-dom'
-import Home from './pages/Home'
-import About from './pages/About'
-import Room from './pages/Room'
+import Home from './features/home/Home'
+import About from './features/about/About'
+import Room from './features/room/Room'
 
 function Header() {
   return (
