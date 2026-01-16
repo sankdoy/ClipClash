@@ -57,10 +57,10 @@ Cloudflare Pages setup
 - Pages Functions are served from `/functions` and are file-based routed
 
 Durable Objects worker (rooms)
-- Worker config: `workers/rooms/wrangler.toml`
+- Worker config: `do-worker/wrangler.toml`
 - Local dev:
 ```
-npx wrangler dev --config workers/rooms/wrangler.toml
+npx wrangler dev --config do-worker/wrangler.toml
 ```
 - Bind the worker to Pages as a separate deployment (Dashboard or Wrangler).
 

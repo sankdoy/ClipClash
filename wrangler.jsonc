@@ -1,9 +1,0 @@
-{
-  // Wrangler config for Cloudflare Pages functions (minimal)
-  "name": "tiktokolympics-pages",
-  "compatibility_date": "2026-01-16",
-  "experimental": {},
-  // Durable Objects are NOT defined here; they must be deployed as a separate Worker
-  // Example placeholder for future bindings:
-  // "bindings": { "durable_objects": [{ "name":"ROOMS_DO","class_name":"RoomsDO" }] }
-}
