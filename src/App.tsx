@@ -2,6 +2,7 @@ import React from 'react'
 import { Routes, Route, Link } from 'react-router-dom'
 import Home from './pages/Home'
 import About from './pages/About'
+import Room from './pages/Room'
 
 function Header() {
   return (
@@ -9,6 +10,7 @@ function Header() {
       <h1>TikTok Olympics</h1>
       <nav>
         <Link to="/">Home</Link>
+        <Link to="/room/alpha">Room</Link>
         <Link to="/about">About</Link>
       </nav>
     </header>
@@ -22,6 +24,7 @@ export default function App() {
       <main>
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/room/:roomId" element={<Room />} />
           <Route path="/about" element={<About />} />
         </Routes>
       </main>
