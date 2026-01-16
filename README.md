@@ -56,6 +56,14 @@ Cloudflare Pages setup
 - Output directory: `dist`
 - Pages Functions are served from `/functions` and are file-based routed
 
+Durable Objects worker (rooms)
+- Worker config: `workers/rooms/wrangler.toml`
+- Local dev:
+```
+npx wrangler dev --config workers/rooms/wrangler.toml
+```
+- Bind the worker to Pages as a separate deployment (Dashboard or Wrangler).
+
 Roadmap (short checklist)
 - [ ] MVP lobby
 - [ ] Link submission UI
