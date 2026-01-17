@@ -216,6 +216,7 @@
 	.dim{color:var(--text-dim)}
 	.status{font-weight:600;font-size:1.05rem}
 	.form-stack{display:flex;flex-direction:column;gap:12px}
+	.table-scroll{width:100%;overflow-x:auto}
 
 	.btn{
 		border:1px solid transparent;

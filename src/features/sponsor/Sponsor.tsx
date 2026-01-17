@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 
 type FormState = {
   sponsorName: string
@@ -6,6 +6,19 @@ type FormState = {
   destinationUrl: string
   imageUrl: string
   contactEmail: string
+}
+
+type Tier = {
+  tier_key: string
+  tier_label: string
+  max_rank: number
+  min_avg_viewers: number
+  baseline_cpm_usd: number
+  discount_rate: number
+  last_updated_iso: string
+  effective_cpm_usd: number
+  price_per_game_usd: number
+  display_price: number
 }
 
 const initialForm: FormState = {
@@ -19,20 +32,51 @@ const initialForm: FormState = {
 export default function Sponsor() {
   const [form, setForm] = useState<FormState>(initialForm)
   const [status, setStatus] = useState<string | null>(null)
+  const [tiers, setTiers] = useState<Tier[]>([])
+  const [loading, setLoading] = useState(true)
+  const [tierKey, setTierKey] = useState('top5')
 
   const updateField = (key: keyof FormState, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  const submit = (event: React.FormEvent) => {
+  useEffect(() => {
+    let mounted = true
+    fetch('/api/sponsor/tiers')
+      .then((res) => res.json())
+      .then((data) => {
+        if (!mounted) return
+        setTiers(data?.tiers ?? [])
+        if (data?.tiers?.length) {
+          setTierKey(data.tiers[0].tier_key)
+        }
+      })
+      .catch(() => setTiers([]))
+      .finally(() => setLoading(false))
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!form.destinationUrl.startsWith('https://')) {
       setStatus('Destination URL must start with https://')
       return
     }
-    setStatus('Thanks, we will contact you.')
-    console.log('Sponsor inquiry', form)
-    setForm(initialForm)
+    const payload = new FormData()
+    payload.append('inventory_type', 'Streamer Games')
+    payload.append('tier_key', tierKey)
+    payload.append('brand_name', form.sponsorName)
+    payload.append('contact_email', form.contactEmail)
+    payload.append('destination_url', form.destinationUrl)
+    payload.append('tagline', form.tagline)
+    payload.append('image_url', form.imageUrl)
+    const res = await fetch('/api/sponsor/submit', { method: 'POST', body: payload })
+    setStatus(res.ok ? 'Thanks, we will contact you.' : 'Submission failed.')
+    if (res.ok) {
+      setForm(initialForm)
+    }
   }
 
   return (
@@ -64,6 +108,41 @@ export default function Sponsor() {
             </p>
           </div>
         </div>
+        <h3>Streamer Games (Top 250 only)</h3>
+        <p className="muted">
+          Streamer Games only run when the host is inside the Top 250 streamers list. We price per
+          game by tier using the floor (minimum) average viewers of that tier.
+        </p>
+        {loading ? (
+          <p className="muted">Loading tiers...</p>
+        ) : tiers.length === 0 ? (
+          <p className="muted">Tier data unavailable.</p>
+        ) : (
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tier</th>
+                  <th>Eligibility</th>
+                  <th>Tier floor avg viewers</th>
+                  <th>Effective CPM</th>
+                  <th>Price per streamer game</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tiers.map((tier) => (
+                  <tr key={tier.tier_key}>
+                    <td>{tier.tier_label}</td>
+                    <td>Rank 1–{tier.max_rank}</td>
+                    <td>{tier.min_avg_viewers}</td>
+                    <td>${tier.effective_cpm_usd.toFixed(2)}</td>
+                    <td>${tier.price_per_game_usd.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="card">
@@ -88,6 +167,7 @@ export default function Sponsor() {
               onChange={(e) => updateField('tagline', e.target.value)}
               required
             />
+            <span className="muted">{form.tagline.length}/80</span>
           </label>
           <label className="field">
             Destination URL (https required)
@@ -106,6 +186,16 @@ export default function Sponsor() {
               onChange={(e) => updateField('imageUrl', e.target.value)}
               required
             />
+          </label>
+          <label className="field">
+            Tier (for Streamer Games)
+            <select value={tierKey} onChange={(e) => setTierKey(e.target.value)}>
+              {tiers.map((tier) => (
+                <option key={tier.tier_key} value={tier.tier_key}>
+                  {tier.tier_label}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="field">
             Contact email
