@@ -78,5 +78,9 @@ Docs
 - Deployment: `docs/DEPLOYMENT.md`
 - Security & moderation: `docs/SECURITY.md`
 
+Feature flags (env)
+- `SPONSORS_ENABLED=true`
+- `PAYMENTS_ENABLED=false`
+
 Contributing
 - PRs welcome. Please follow code style (Prettier) and provide a short description of changes.
