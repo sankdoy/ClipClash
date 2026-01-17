@@ -13,6 +13,7 @@ import type {
   RpsChoice,
   ScoreboardEntry,
   ServerMessage,
+  SponsorSlot,
   Settings,
   TieBreakState,
   TimerState
@@ -116,6 +117,7 @@ export default function Room() {
   const [voteSelection, setVoteSelection] = useState<string | null>(null)
   const [scoreboard, setScoreboard] = useState<ScoreboardEntry[]>([])
   const [history, setHistory] = useState<RoundHistoryEntry[]>([])
+  const [sponsorSlot, setSponsorSlot] = useState<SponsorSlot | null>(null)
   const [displayName, setDisplayName] = useState('')
   const [accountUsername, setAccountUsername] = useState<string | null>(null)
   const [playerId, setPlayerId] = useState<string | null>(null)
@@ -205,6 +207,7 @@ export default function Room() {
         setReportCount(data.reportCount)
         setInviteCode(data.inviteCode ?? roomId ?? null)
         setAudienceCode(data.audienceCode ?? null)
+        setSponsorSlot(data.sponsorSlot ?? null)
       }
       if (data.type === 'room_state') {
         setPlayers(data.players)
@@ -219,6 +222,7 @@ export default function Room() {
         setReportCount(data.reportCount)
         setInviteCode(data.inviteCode ?? roomId ?? null)
         setAudienceCode(data.audienceCode ?? null)
+        setSponsorSlot(data.sponsorSlot ?? null)
       }
       if (data.type === 'presence') {
         setPlayers(data.players)

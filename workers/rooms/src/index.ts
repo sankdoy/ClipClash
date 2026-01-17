@@ -14,6 +14,7 @@ import type {
   ServerMessage,
   Settings,
   Submission,
+  SponsorSlot,
   TieBreakState,
   TimerState
 } from '../../../src/types'
@@ -67,6 +68,7 @@ type PersistedState = {
   readyByPlayer: Record<string, boolean>
   doneByPlayer: Record<string, boolean>
   requiredDoneIds: string[]
+  sponsorSlot?: SponsorSlot | null
   categories: Category[]
   draftsByPlayer: Record<string, DraftsByCategory>
   submissions: Record<string, Submission[]>
@@ -319,6 +321,7 @@ export class RoomsDO implements DurableObject {
   doneByPlayer: Map<string, boolean>
   requiredDoneIds: Set<string>
   votesByAudience: Map<string, string>
+  sponsorSlot: SponsorSlot | null
   chat: ChatMessage[]
   phase: Phase
   settings: Settings
@@ -351,6 +354,7 @@ export class RoomsDO implements DurableObject {
     this.doneByPlayer = new Map()
     this.requiredDoneIds = new Set()
     this.votesByAudience = new Map()
+    this.sponsorSlot = null
     this.chat = []
     this.phase = 'lobby'
     this.settings = { ...defaultSettings }
@@ -394,6 +398,7 @@ export class RoomsDO implements DurableObject {
       this.doneByPlayer = new Map(Object.entries(stored.doneByPlayer ?? {}).map(([id, done]) => [id, done]))
       this.requiredDoneIds = new Set(stored.requiredDoneIds ?? [])
       this.votesByAudience = new Map(Object.entries(stored.votesByAudience ?? {}))
+      this.sponsorSlot = stored.sponsorSlot ?? null
       this.categories = stored.categories ?? [...defaultCategories]
       this.draftsByPlayer = new Map(
         Object.entries(stored.draftsByPlayer ?? {}).map(([playerId, drafts]) => [playerId, drafts])
@@ -507,12 +512,13 @@ export class RoomsDO implements DurableObject {
             categories: this.categories,
             scoreboard: this.getScoreboard(),
             history: this.history,
-            drafts: {},
-            reportCount: this.reports.length,
-            inviteCode: this.inviteCode ?? undefined,
-            audienceCode: this.audienceCode ?? undefined
-          })
-        )
+          drafts: {},
+          reportCount: this.reports.length,
+          inviteCode: this.inviteCode ?? undefined,
+          audienceCode: this.audienceCode ?? undefined,
+          sponsorSlot: this.sponsorSlot
+        })
+      )
         this.broadcastRoomState()
         this.persistState()
         return
@@ -606,7 +612,8 @@ export class RoomsDO implements DurableObject {
           drafts: this.getDrafts(playerId),
           reportCount: this.reports.length,
           inviteCode: this.inviteCode ?? undefined,
-          audienceCode: this.audienceCode ?? undefined
+          audienceCode: this.audienceCode ?? undefined,
+          sponsorSlot: this.sponsorSlot
         })
       )
 
@@ -715,6 +722,9 @@ export class RoomsDO implements DurableObject {
       if (!this.allPlayersReady()) {
         ws.send(toServerMessage({ type: 'error', message: 'Waiting for players to ready up.' }))
         return
+      }
+      if (!this.sponsorSlot) {
+        this.sponsorSlot = buildDefaultSponsorSlot()
       }
       this.requiredDoneIds = new Set(
         Array.from(this.players.values())
@@ -1026,7 +1036,8 @@ export class RoomsDO implements DurableObject {
       history: this.history,
       reportCount: this.reports.length,
       inviteCode: this.inviteCode ?? undefined,
-      audienceCode: this.audienceCode ?? undefined
+      audienceCode: this.audienceCode ?? undefined,
+      sponsorSlot: this.sponsorSlot
     })
   }
 
@@ -1410,6 +1421,7 @@ export class RoomsDO implements DurableObject {
       readyByPlayer: Object.fromEntries(this.readyByPlayer.entries()),
       doneByPlayer: Object.fromEntries(this.doneByPlayer.entries()),
       requiredDoneIds: Array.from(this.requiredDoneIds.values()),
+      sponsorSlot: this.sponsorSlot,
       categories: this.categories,
       draftsByPlayer: Object.fromEntries(this.draftsByPlayer.entries()),
       submissions,
@@ -1441,6 +1453,7 @@ export class RoomsDO implements DurableObject {
       this.doneByPlayer.set(key, false)
     }
     this.requiredDoneIds.clear()
+    this.sponsorSlot = null
     this.timer = {
       targetMinutes: this.settings.defaultTime,
       huntRemainingSeconds: null,
@@ -1585,5 +1598,15 @@ export class RoomsDO implements DurableObject {
       .bind(accountId)
       .first()
     return row?.has_audience_mode === 1
+  }
+}
+
+function buildDefaultSponsorSlot(): SponsorSlot {
+  return {
+    status: 'empty',
+    sponsorName: '',
+    imageUrl: '',
+    clickUrl: '',
+    tagline: ''
   }
 }

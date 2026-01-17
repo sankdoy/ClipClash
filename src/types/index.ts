@@ -96,9 +96,10 @@ export type DraftsByCategory = Record<string, string>
 
 export interface SponsorSlot {
   status: 'empty' | 'filled'
-  label: string
-  imageUrl?: string
-  linkUrl?: string
+  sponsorName: string
+  imageUrl: string
+  clickUrl: string
+  tagline: string
 }
 
 export interface ChatMessage {
@@ -141,8 +142,8 @@ export type ClientMessage =
   | { type: 'set_audience_mode'; enabled: boolean }
 
 export type ServerMessage =
-  | { type: 'welcome'; sessionToken: string; playerId: string; roomId: string; phase: Phase; players: Player[]; chat: ChatMessage[]; settings: Settings; timer: TimerState; categories: Category[]; scoreboard: ScoreboardEntry[]; history: RoundHistoryEntry[]; drafts: DraftsByCategory; reportCount: number; inviteCode?: string; audienceCode?: string }
-  | { type: 'room_state'; phase: Phase; players: Player[]; chat: ChatMessage[]; settings: Settings; timer: TimerState; categories: Category[]; scoreboard: ScoreboardEntry[]; history: RoundHistoryEntry[]; reportCount: number; inviteCode?: string; audienceCode?: string }
+  | { type: 'welcome'; sessionToken: string; playerId: string; roomId: string; phase: Phase; players: Player[]; chat: ChatMessage[]; settings: Settings; timer: TimerState; categories: Category[]; scoreboard: ScoreboardEntry[]; history: RoundHistoryEntry[]; drafts: DraftsByCategory; reportCount: number; inviteCode?: string; audienceCode?: string; sponsorSlot?: SponsorSlot | null }
+  | { type: 'room_state'; phase: Phase; players: Player[]; chat: ChatMessage[]; settings: Settings; timer: TimerState; categories: Category[]; scoreboard: ScoreboardEntry[]; history: RoundHistoryEntry[]; reportCount: number; inviteCode?: string; audienceCode?: string; sponsorSlot?: SponsorSlot | null }
   | { type: 'presence'; players: Player[] }
   | { type: 'chat'; chat: ChatMessage }
   | { type: 'invite_code'; code: string }
