@@ -1312,6 +1312,30 @@ export default function Room() {
                       </button>
                     </div>
                   </div>
+                  {sponsorSlot && (
+                    <div className="sponsor-card">
+                      {sponsorSlot.imageUrl ? (
+                        <img src={sponsorSlot.imageUrl} alt={sponsorSlot.sponsorName || 'Sponsor'} />
+                      ) : (
+                        <div className="sponsor-placeholder" />
+                      )}
+                      <div className="sponsor-details">
+                        <h4>{sponsorSlot.sponsorName || 'Sponsor'}</h4>
+                        <p className="muted">{sponsorSlot.tagline}</p>
+                        <a
+                          className="btn outline"
+                          href={sponsorSlot.clickUrl || '/sponsor'}
+                          target="_blank"
+                          rel="noopener"
+                        >
+                          Visit sponsor
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                  <a className="btn ghost" href="/sponsor" target="_blank" rel="noopener">
+                    Sponsor a game
+                  </a>
                   <button className="btn primary" onClick={resetMatch} disabled={!isHost}>
                     Play again
                   </button>
