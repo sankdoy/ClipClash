@@ -121,7 +121,6 @@ export default function Room() {
   const [playerId, setPlayerId] = useState<string | null>(null)
   const [sessionToken, setSessionToken] = useState<string | null>(null)
   const [message, setMessage] = useState('')
-  const [voteIntent, setVoteIntent] = useState<'higher' | 'lower' | 'neutral'>('neutral')
   const [submissionDrafts, setSubmissionDrafts] = useState<Record<string, string>>({})
   const [submissionSaved, setSubmissionSaved] = useState<Record<string, string>>({})
   const [submissionErrors, setSubmissionErrors] = useState<Record<string, string>>({})
@@ -136,7 +135,9 @@ export default function Room() {
   const [mobilePanel, setMobilePanel] = useState<'main' | 'players' | 'side'>('main')
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [inviteOpen, setInviteOpen] = useState(false)
+  const [timerDraft, setTimerDraft] = useState(10)
   const socketRef = useRef<WebSocket | null>(null)
+  const isTestPlayer = Boolean(new URLSearchParams(window.location.search).get('player'))
 
   useEffect(() => {
     if (!roomId) return
@@ -145,12 +146,21 @@ export default function Room() {
 
     ws.addEventListener('open', () => {
       setIsConnected(true)
-      const storedToken = window.localStorage.getItem(`tto:sessionToken:${roomId}`)
-      const storedName = window.localStorage.getItem(`tto:displayName:${roomId}`) ?? ''
+      const storedToken = isTestPlayer ? null : window.localStorage.getItem(`tto:sessionToken:${roomId}`)
+      const storedName = isTestPlayer ? '' : window.localStorage.getItem(`tto:displayName:${roomId}`) ?? ''
+      const playerLabel = new URLSearchParams(window.location.search).get('player')
+      const autoName =
+        playerLabel && !storedName && !displayName ? `Player ${playerLabel}` : null
+      if (autoName) {
+        setDisplayName(autoName)
+      }
       if (storedName && !displayName) {
         setDisplayName(storedName)
       }
       ws.send(JSON.stringify({ type: 'hello', sessionToken: storedToken ?? undefined }))
+      if (autoName) {
+        ws.send(JSON.stringify({ type: 'update_name', name: autoName }))
+      }
       if (storedName) {
         ws.send(JSON.stringify({ type: 'update_name', name: storedName }))
       }
@@ -276,13 +286,15 @@ export default function Room() {
 
   useEffect(() => {
     if (!roomId || !sessionToken) return
+    if (isTestPlayer) return
     window.localStorage.setItem(`tto:sessionToken:${roomId}`, sessionToken)
-  }, [roomId, sessionToken])
+  }, [roomId, sessionToken, isTestPlayer])
 
   useEffect(() => {
     if (!roomId) return
+    if (isTestPlayer) return
     window.localStorage.setItem(`tto:displayName:${roomId}`, displayName)
-  }, [roomId, displayName])
+  }, [roomId, displayName, isTestPlayer])
 
   const isHost = players.find((player) => player.id === playerId)?.isHost ?? false
 
@@ -352,13 +364,6 @@ export default function Room() {
     setReportNotice('Report sent.')
   }
 
-  const sendVote = (direction: 'higher' | 'lower' | 'neutral') => {
-    const ws = socketRef.current
-    if (!ws || ws.readyState !== WebSocket.OPEN) return
-    ws.send(JSON.stringify({ type: 'vote_time', direction }))
-    setVoteIntent(direction)
-  }
-
   const startHunt = () => {
     const ws = socketRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return
@@ -383,6 +388,12 @@ export default function Room() {
     const ws = socketRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return
     ws.send(JSON.stringify({ type: 'reset_match' }))
+  }
+
+  const setTimerTarget = (minutes: number) => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'set_timer', minutes }))
   }
 
   const copyInvite = async () => {
@@ -512,6 +523,14 @@ export default function Room() {
   const inviteUrl = roomId ? `${window.location.origin}/room/${roomId}` : ''
   const submittedCount = Object.keys(submissionSaved).length
   const nextCategory = categories[history.length]?.name
+  const timerMin = settings?.minTime ?? 3
+  const timerMax = settings?.maxTime ?? 20
+
+  useEffect(() => {
+    if (timer?.targetMinutes) {
+      setTimerDraft(timer.targetMinutes)
+    }
+  }, [timer?.targetMinutes])
 
   const submitLink = (categoryId: string) => {
     const url = (submissionDrafts[categoryId] ?? '').trim()
@@ -633,35 +652,27 @@ export default function Room() {
                   <span className="timer-value">{displayTimer()}</span>
                   <span className="timer-label">{timerLabel()}</span>
                 </div>
-                <div className="vote-strip">
+                <div className="timer-controls">
+                  <label className="field">
+                    Host timer (minutes)
+                    <input
+                      type="number"
+                      min={timerMin}
+                      max={timerMax}
+                      value={timerDraft}
+                      onChange={(e) => setTimerDraft(Number(e.target.value))}
+                      disabled={!isHost || phase !== 'lobby'}
+                    />
+                  </label>
                   <button
-                    className={`btn outline ${voteIntent === 'higher' ? 'active' : ''}`}
-                    onClick={() => sendVote('higher')}
-                    disabled={phase !== 'lobby'}
+                    className="btn outline"
+                    onClick={() => setTimerTarget(Math.min(timerMax, Math.max(timerMin, timerDraft)))}
+                    disabled={!isHost || phase !== 'lobby'}
                   >
-                    Higher
-                  </button>
-                  <button
-                    className={`btn outline ${voteIntent === 'lower' ? 'active' : ''}`}
-                    onClick={() => sendVote('lower')}
-                    disabled={phase !== 'lobby'}
-                  >
-                    Lower
-                  </button>
-                  <button
-                    className={`btn outline ${voteIntent === 'neutral' ? 'active' : ''}`}
-                    onClick={() => sendVote('neutral')}
-                    disabled={phase !== 'lobby'}
-                  >
-                    Clear
+                    Set timer
                   </button>
                 </div>
-                <p className="muted">Vote recalculates every 5 seconds.</p>
-                <div className="vote-status">
-                  <span>Higher: {timer?.voteHigherCount ?? 0}</span>
-                  <span>Lower: {timer?.voteLowerCount ?? 0}</span>
-                  <span>Players: {timer?.playerCount ?? players.length}</span>
-                </div>
+                <p className="muted">Host controls the timer before the hunt starts.</p>
               </div>
 
               <div className="panel-card">

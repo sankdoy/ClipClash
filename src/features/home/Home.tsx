@@ -13,6 +13,12 @@ export default function Home() {
   const [roomsStatus, setRoomsStatus] = useState<'loading' | 'ok' | 'error'>('loading')
   const navigate = useNavigate()
 
+  const startRoom = () => {
+    const newRoomId = makeRoomId()
+    setRoomCode(newRoomId)
+    navigate(`/room/${newRoomId}`)
+  }
+
   useEffect(() => {
     let mounted = true
     getHealth().then((d) => {
@@ -47,7 +53,7 @@ export default function Home() {
             <h2>Start a room or join with a code.</h2>
             <p className="muted">2–10 players. One shared timer. Vote in secret.</p>
             <div className="mode-actions">
-              <button className="btn primary" onClick={() => navigate(`/room/${makeRoomId()}`)}>
+              <button className="btn primary" onClick={startRoom}>
                 Start a room
               </button>
               <button

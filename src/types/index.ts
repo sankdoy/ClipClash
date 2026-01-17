@@ -120,7 +120,7 @@ export interface TimerState {
 export type ClientMessage =
   | { type: 'hello'; sessionToken?: string }
   | { type: 'chat'; message: string }
-  | { type: 'vote_time'; direction: 'higher' | 'lower' | 'neutral' }
+  | { type: 'set_timer'; minutes: number }
   | { type: 'start_hunt' }
   | { type: 'reset_match' }
   | { type: 'update_categories'; categories: Category[] }

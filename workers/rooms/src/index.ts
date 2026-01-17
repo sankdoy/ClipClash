@@ -114,9 +114,9 @@ const chatSchema = z.object({
   message: z.string().min(1).max(240)
 })
 
-const voteTimeSchema = z.object({
-  type: z.literal('vote_time'),
-  direction: z.enum(['higher', 'lower', 'neutral'])
+const setTimerSchema = z.object({
+  type: z.literal('set_timer'),
+  minutes: z.number().int().min(1)
 })
 
 const startHuntSchema = z.object({ type: z.literal('start_hunt') })
@@ -163,7 +163,7 @@ const clientMessageSchema = z.union([
   helloSchema,
   updateNameSchema,
   chatSchema,
-  voteTimeSchema,
+  setTimerSchema,
   startHuntSchema,
   resetMatchSchema,
   updateCategoriesSchema,
@@ -284,7 +284,6 @@ export class RoomsDO implements DurableObject {
   phase: Phase
   settings: Settings
   timer: TimerState
-  voteIntent: Map<string, 'higher' | 'lower' | 'neutral'>
   categories: Category[]
   draftsByPlayer: Map<string, DraftsByCategory>
   round: RoundState | null
@@ -318,7 +317,6 @@ export class RoomsDO implements DurableObject {
       playerCount: 0,
       lastTickAt: Date.now()
     }
-    this.voteIntent = new Map()
     this.categories = [...defaultCategories]
     this.round = null
     this.categoryIndex = 0
@@ -542,11 +540,19 @@ export class RoomsDO implements DurableObject {
       this.persistState()
     }
 
-    if (parsed.type === 'vote_time') {
+    if (parsed.type === 'set_timer') {
       if (this.phase !== 'lobby') return
-      if (Date.now() - session.lastVoteAt < voteCooldownMs) return
-      this.voteIntent.set(session.playerId!, parsed.direction)
-      session.lastVoteAt = Date.now()
+      if (this.hostId !== session.playerId) return
+      const minutes = Math.min(this.settings.maxTime, Math.max(this.settings.minTime, parsed.minutes))
+      this.timer.targetMinutes = minutes
+      this.timer.huntRemainingSeconds = null
+      this.timer.intermissionRemainingSeconds = null
+      this.timer.voteHigherCount = 0
+      this.timer.voteLowerCount = 0
+      this.timer.playerCount = this.sessions.size
+      this.timer.lastTickAt = Date.now()
+      this.broadcast({ type: 'timer', phase: this.phase, timer: this.timer })
+      this.persistState()
       return
     }
 
@@ -712,7 +718,6 @@ export class RoomsDO implements DurableObject {
       }
     }
     if (session?.playerId && !session.replacedByNew) {
-      this.voteIntent.delete(session.playerId)
       const record = this.players.get(session.playerId)
       if (record) {
         this.players.set(session.playerId, {
@@ -739,7 +744,6 @@ export class RoomsDO implements DurableObject {
       }
     }
     if (session?.playerId && !session.replacedByNew) {
-      this.voteIntent.delete(session.playerId)
       const record = this.players.get(session.playerId)
       if (record) {
         this.players.set(session.playerId, {
@@ -781,9 +785,6 @@ export class RoomsDO implements DurableObject {
 
   async alarm() {
     if (this.phase === 'lobby') {
-      this.applyVoteTick()
-      this.broadcast({ type: 'timer', phase: this.phase, timer: this.timer })
-      await this.ensureAlarm()
       return
     }
 
@@ -850,30 +851,7 @@ export class RoomsDO implements DurableObject {
     }
   }
 
-  applyVoteTick() {
-    const playerCount = this.sessions.size
-    const higherVotes = Array.from(this.voteIntent.values()).filter((v) => v === 'higher').length
-    const lowerVotes = Array.from(this.voteIntent.values()).filter((v) => v === 'lower').length
-    this.timer.playerCount = playerCount
-    this.timer.voteHigherCount = higherVotes
-    this.timer.voteLowerCount = lowerVotes
-    this.timer.lastTickAt = Date.now()
-
-    if (playerCount === 0) return
-    const threshold = this.settings.voteThreshold
-    if (higherVotes / playerCount >= threshold) {
-      this.timer.targetMinutes = Math.min(this.settings.maxTime, this.timer.targetMinutes + 1)
-    } else if (lowerVotes / playerCount >= threshold) {
-      this.timer.targetMinutes = Math.max(this.settings.minTime, this.timer.targetMinutes - 1)
-    }
-    this.persistState()
-  }
-
   async ensureAlarm() {
-    if (this.phase === 'lobby') {
-      await this.state.storage.setAlarm(Date.now() + this.settings.voteTickSeconds * 1000)
-      return
-    }
     if (this.phase === 'hunt' || this.phase === 'intermission') {
       await this.state.storage.setAlarm(Date.now() + 1000)
       return

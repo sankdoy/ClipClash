@@ -497,6 +497,7 @@
 	.timer-label{color:var(--text-dim);font-size:0.85rem}
 	.vote-strip{display:flex;gap:10px;flex-wrap:wrap}
 	.vote-strip .btn.active{background:var(--accent);color:var(--accent-contrast);border-color:transparent}
+	.timer-controls{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
 	.vote-status{display:flex;gap:12px;flex-wrap:wrap;font-weight:600;color:var(--text-muted)}
 	.category-grid{display:grid;gap:10px}
 	.category-card{
@@ -535,9 +536,10 @@
 	.chat-line{display:flex;align-items:center;gap:8px}
 	.chat-line span{font-weight:700;margin-right:6px}
 	.chat-line .btn{padding:4px 10px;font-size:0.75rem}
-	.chat-form{display:flex;gap:8px}
+	.chat-form{display:flex;gap:8px;flex-wrap:wrap;align-items:stretch}
 	.chat-form input{
-		flex:1;
+		flex:1 1 180px;
+		min-width:0;
 		border-radius:999px;
 		padding:10px 14px;
 		border:1px solid var(--border);
