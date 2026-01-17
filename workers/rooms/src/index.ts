@@ -36,6 +36,7 @@ type Session = {
   lastChatAt: number
   lastVoteAt: number
   lastReportAt: number
+  lastReadyAt: number
   replacedByNew: boolean
 }
 
@@ -61,6 +62,7 @@ type PersistedState = {
   timer: TimerState
   chat: ChatMessage[]
   players: PlayerRecord[]
+  readyByPlayer: Record<string, boolean>
   categories: Category[]
   draftsByPlayer: Record<string, DraftsByCategory>
   submissions: Record<string, Submission[]>
@@ -75,6 +77,8 @@ type PersistedState = {
   reports: ReportEntry[]
   playerAccounts: Record<string, string>
   resultsRecorded?: boolean
+  inviteCode?: string
+  isClosed?: boolean
 }
 
 const defaultSettings: Settings = {
@@ -97,11 +101,13 @@ const defaultCategories = [
 
 const chatCooldownMs = 800
 const voteCooldownMs = 400
+const readyCooldownMs = 2000
 const reportCooldownMs = 3000
 
 const helloSchema = z.object({
   type: z.literal('hello'),
-  sessionToken: z.string().min(1).optional()
+  sessionToken: z.string().min(1).optional(),
+  inviteCode: z.string().min(1).optional()
 })
 
 const updateNameSchema = z.object({
@@ -119,8 +125,15 @@ const setTimerSchema = z.object({
   minutes: z.number().int().min(1)
 })
 
+const setReadySchema = z.object({
+  type: z.literal('set_ready'),
+  ready: z.boolean()
+})
+
 const startHuntSchema = z.object({ type: z.literal('start_hunt') })
 const resetMatchSchema = z.object({ type: z.literal('reset_match') })
+const closeRoomSchema = z.object({ type: z.literal('close_room') })
+const rotateInviteSchema = z.object({ type: z.literal('rotate_invite') })
 
 const updateCategoriesSchema = z.object({
   type: z.literal('update_categories'),
@@ -164,8 +177,11 @@ const clientMessageSchema = z.union([
   updateNameSchema,
   chatSchema,
   setTimerSchema,
+  setReadySchema,
   startHuntSchema,
   resetMatchSchema,
+  closeRoomSchema,
+  rotateInviteSchema,
   updateCategoriesSchema,
   saveDraftSchema,
   submitSubmissionSchema,
@@ -280,6 +296,7 @@ export class RoomsDO implements DurableObject {
   env: Env
   sessions: Map<WebSocket, Session>
   players: Map<string, PlayerRecord>
+  readyByPlayer: Map<string, boolean>
   chat: ChatMessage[]
   phase: Phase
   settings: Settings
@@ -299,12 +316,15 @@ export class RoomsDO implements DurableObject {
   tokenToSocket: Map<string, WebSocket>
   playerAccounts: Map<string, string>
   resultsRecorded: boolean
+  inviteCode: string | null
+  isClosed: boolean
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state
     this.env = env
     this.sessions = new Map()
     this.players = new Map()
+    this.readyByPlayer = new Map()
     this.chat = []
     this.phase = 'lobby'
     this.settings = { ...defaultSettings }
@@ -332,6 +352,8 @@ export class RoomsDO implements DurableObject {
     this.tokenToSocket = new Map()
     this.playerAccounts = new Map()
     this.resultsRecorded = false
+    this.inviteCode = null
+    this.isClosed = false
 
     this.state.blockConcurrencyWhile(async () => {
       const stored = await this.state.storage.get<PersistedState>('room_state')
@@ -341,6 +363,7 @@ export class RoomsDO implements DurableObject {
       this.timer = stored.timer
       this.chat = stored.chat ?? []
       this.players = new Map((stored.players ?? []).map((player) => [player.id, player]))
+      this.readyByPlayer = new Map(Object.entries(stored.readyByPlayer ?? {}).map(([id, ready]) => [id, ready]))
       this.categories = stored.categories ?? [...defaultCategories]
       this.draftsByPlayer = new Map(
         Object.entries(stored.draftsByPlayer ?? {}).map(([playerId, drafts]) => [playerId, drafts])
@@ -356,6 +379,8 @@ export class RoomsDO implements DurableObject {
       this.reports = stored.reports ?? []
       this.playerAccounts = new Map(Object.entries(stored.playerAccounts ?? {}))
       this.resultsRecorded = stored.resultsRecorded ?? false
+      this.inviteCode = stored.inviteCode ?? null
+      this.isClosed = stored.isClosed ?? false
       this.submissions = new Map(
         Object.entries(stored.submissions ?? {}).map(([categoryId, items]) => [
           categoryId,
@@ -384,6 +409,7 @@ export class RoomsDO implements DurableObject {
       lastChatAt: 0,
       lastVoteAt: 0,
       lastReportAt: 0,
+      lastReadyAt: 0,
       replacedByNew: false
     }
 
@@ -412,6 +438,11 @@ export class RoomsDO implements DurableObject {
       if (session.playerId && session.sessionToken) {
         return
       }
+      if (this.isClosed) {
+        ws.send(toServerMessage({ type: 'room_closed', message: 'Room closed by host.' }))
+        ws.close(1000, 'Room closed')
+        return
+      }
 
       const token = parsed.sessionToken?.trim()
       const resolved = resolveSessionToken(
@@ -423,11 +454,23 @@ export class RoomsDO implements DurableObject {
       const playerId = resolved.playerId
       const sessionToken = resolved.sessionToken
 
+      if (!this.inviteCode) {
+        this.inviteCode = parsed.inviteCode?.trim() ?? null
+      }
+      if (this.inviteCode && parsed.inviteCode?.trim() !== this.inviteCode) {
+        ws.send(toServerMessage({ type: 'error', message: 'Invalid room code.' }))
+        ws.close(1000, 'Invalid room code')
+        return
+      }
+
       const existingRecord = this.players.get(playerId)
       if (existingRecord) {
         this.players.set(playerId, { ...existingRecord, isConnected: true, accountId: session.accountId ?? existingRecord.accountId })
         session.displayName = existingRecord.displayName
         session.joinedAt = existingRecord.joinedAt
+        if (!this.readyByPlayer.has(playerId)) {
+          this.readyByPlayer.set(playerId, false)
+        }
       } else {
         this.players.set(playerId, {
           id: playerId,
@@ -436,6 +479,7 @@ export class RoomsDO implements DurableObject {
           isConnected: true,
           accountId: session.accountId ?? undefined
         })
+        this.readyByPlayer.set(playerId, false)
       }
 
       if (session.accountId) {
@@ -482,7 +526,8 @@ export class RoomsDO implements DurableObject {
           scoreboard: this.getScoreboard(),
           history: this.history,
           drafts: this.getDrafts(playerId),
-          reportCount: this.reports.length
+          reportCount: this.reports.length,
+          inviteCode: this.inviteCode ?? undefined
         })
       )
 
@@ -556,9 +601,24 @@ export class RoomsDO implements DurableObject {
       return
     }
 
+    if (parsed.type === 'set_ready') {
+      if (this.phase !== 'lobby') return
+      if (Date.now() - session.lastReadyAt < readyCooldownMs) return
+      this.readyByPlayer.set(session.playerId!, parsed.ready)
+      session.lastReadyAt = Date.now()
+      this.sessions.set(ws, session)
+      this.broadcast({ type: 'presence', players: this.getPlayers() })
+      this.persistState()
+      return
+    }
+
     if (parsed.type === 'start_hunt') {
       if (this.phase !== 'lobby') return
       if (this.hostId !== session.playerId) return
+      if (!this.allPlayersReady()) {
+        ws.send(toServerMessage({ type: 'error', message: 'Waiting for players to ready up.' }))
+        return
+      }
       this.phase = 'hunt'
       this.timer.huntRemainingSeconds = this.timer.targetMinutes * 60
       this.timer.intermissionRemainingSeconds = null
@@ -574,6 +634,25 @@ export class RoomsDO implements DurableObject {
       this.broadcast({ type: 'scoreboard', scoreboard: this.getScoreboard(), history: this.history })
       this.persistState()
       await this.ensureAlarm()
+    }
+
+    if (parsed.type === 'close_room') {
+      if (this.hostId !== session.playerId) return
+      this.isClosed = true
+      this.broadcast({ type: 'room_closed', message: 'Room closed by host.' })
+      for (const socket of this.sessions.keys()) {
+        socket.close(1000, 'Room closed')
+      }
+      this.persistState()
+      return
+    }
+
+    if (parsed.type === 'rotate_invite') {
+      if (this.hostId !== session.playerId) return
+      this.inviteCode = `room-${Math.random().toString(36).slice(2, 8)}`
+      this.broadcast({ type: 'invite_code', code: this.inviteCode })
+      this.persistState()
+      return
     }
 
     if (parsed.type === 'update_categories') {
@@ -726,6 +805,7 @@ export class RoomsDO implements DurableObject {
           lastSeenAt: Date.now()
         })
       }
+      this.readyByPlayer.set(session.playerId, false)
     }
     this.sessions.delete(ws)
     if (session?.playerId === this.hostId) {
@@ -752,6 +832,7 @@ export class RoomsDO implements DurableObject {
           lastSeenAt: Date.now()
         })
       }
+      this.readyByPlayer.set(session.playerId, false)
     }
     this.sessions.delete(ws)
     if (session?.playerId === this.hostId) {
@@ -777,10 +858,22 @@ export class RoomsDO implements DurableObject {
         joinedAt: record.joinedAt,
         isHost: record.id === this.hostId,
         isConnected: record.isConnected,
+        isReady: record.id === this.hostId ? true : this.readyByPlayer.get(record.id) ?? false,
         lastSeenAt: record.lastSeenAt
       })
     }
     return players.sort((a, b) => a.joinedAt - b.joinedAt)
+  }
+
+  allPlayersReady() {
+    for (const record of this.players.values()) {
+      if (!record.isConnected) continue
+      if (record.id === this.hostId) continue
+      if (!this.readyByPlayer.get(record.id)) {
+        return false
+      }
+    }
+    return true
   }
 
   async alarm() {
@@ -1036,6 +1129,7 @@ export class RoomsDO implements DurableObject {
       timer: this.timer,
       chat: this.chat,
       players: Array.from(this.players.values()),
+      readyByPlayer: Object.fromEntries(this.readyByPlayer.entries()),
       categories: this.categories,
       draftsByPlayer: Object.fromEntries(this.draftsByPlayer.entries()),
       submissions,
@@ -1049,13 +1143,18 @@ export class RoomsDO implements DurableObject {
       sessionTokens: Object.fromEntries(this.tokenToPlayerId.entries()),
       reports: this.reports,
       playerAccounts: Object.fromEntries(this.playerAccounts.entries()),
-      resultsRecorded: this.resultsRecorded
+      resultsRecorded: this.resultsRecorded,
+      inviteCode: this.inviteCode ?? undefined,
+      isClosed: this.isClosed
     }
     await this.state.storage.put('room_state', payload)
   }
 
   resetMatch() {
     this.phase = 'lobby'
+    for (const key of this.readyByPlayer.keys()) {
+      this.readyByPlayer.set(key, false)
+    }
     this.timer = {
       targetMinutes: this.settings.defaultTime,
       huntRemainingSeconds: null,

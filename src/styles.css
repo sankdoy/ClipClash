@@ -399,6 +399,25 @@
 		background:var(--card-2);
 	}
 	.player-slot.placeholder{opacity:0.5;border-style:dashed}
+	.ready-indicator{
+		width:26px;
+		height:26px;
+		border-radius:50%;
+		display:flex;
+		align-items:center;
+		justify-content:center;
+		font-weight:700;
+		border:1px solid var(--border);
+		background:var(--surface-subtle);
+	}
+	.ready-indicator.ready{
+		color:#16a34a;
+		border-color:rgba(22,163,74,0.5);
+	}
+	.ready-indicator.not-ready{
+		color:#ef4444;
+		border-color:rgba(239,68,68,0.5);
+	}
 	.player-avatar{
 		width:34px;
 		height:34px;
@@ -523,6 +542,14 @@
 	.category-editor{margin-top:12px;display:flex;flex-direction:column;gap:8px}
 	.category-toolbar{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
 	.category-toolbar .field{min-width:220px}
+	.category-list{display:flex;flex-wrap:wrap;gap:8px}
+	.category-chip{
+		padding:6px 10px;
+		border-radius:999px;
+		background:var(--surface-subtle);
+		border:1px solid var(--border);
+		font-weight:600;
+	}
 	.category-row{display:flex;gap:8px;align-items:center}
 	.category-row input{
 		flex:1;

@@ -23,6 +23,20 @@ export default function Home() {
     navigate(`/room/${newRoomId}`)
   }
 
+  const joinRoom = () => {
+    const trimmed = roomCode.trim()
+    if (!trimmed) return
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      window.location.assign(trimmed)
+      return
+    }
+    if (trimmed.startsWith('/room/')) {
+      window.location.assign(trimmed)
+      return
+    }
+    navigate(`/room/${trimmed}`)
+  }
+
   useEffect(() => {
     let mounted = true
     getHealth().then((d) => {
@@ -90,7 +104,7 @@ export default function Home() {
             <div className="mode-actions">
               <button
                 className="btn ghost"
-                onClick={() => roomCode && navigate(`/room/${roomCode.trim()}`)}
+                onClick={joinRoom}
                 disabled={!roomCode.trim()}
               >
                 Join with code

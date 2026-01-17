@@ -135,6 +135,7 @@ export default function Room() {
   const [mobilePanel, setMobilePanel] = useState<'main' | 'players' | 'side'>('main')
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [inviteOpen, setInviteOpen] = useState(false)
+  const [inviteCode, setInviteCode] = useState<string | null>(null)
   const [timerDraft, setTimerDraft] = useState(10)
   const socketRef = useRef<WebSocket | null>(null)
   const isTestPlayer = Boolean(new URLSearchParams(window.location.search).get('player'))
@@ -151,13 +152,14 @@ export default function Room() {
       const playerLabel = new URLSearchParams(window.location.search).get('player')
       const autoName =
         playerLabel && !storedName && !displayName ? `Player ${playerLabel}` : null
+      const inviteFromUrl = new URLSearchParams(window.location.search).get('code') ?? roomId ?? undefined
       if (autoName) {
         setDisplayName(autoName)
       }
       if (storedName && !displayName) {
         setDisplayName(storedName)
       }
-      ws.send(JSON.stringify({ type: 'hello', sessionToken: storedToken ?? undefined }))
+      ws.send(JSON.stringify({ type: 'hello', sessionToken: storedToken ?? undefined, inviteCode: inviteFromUrl ?? undefined }))
       if (autoName) {
         ws.send(JSON.stringify({ type: 'update_name', name: autoName }))
       }
@@ -183,6 +185,7 @@ export default function Room() {
         setHistory(data.history)
         setSubmissionDrafts((prev) => mergeDrafts(prev, data.drafts))
         setReportCount(data.reportCount)
+        setInviteCode(data.inviteCode ?? roomId ?? null)
       }
       if (data.type === 'presence') {
         setPlayers(data.players)
@@ -238,6 +241,15 @@ export default function Room() {
       }
       if (data.type === 'error') {
         setReportNotice(data.message)
+      }
+      if (data.type === 'invite_code') {
+        setInviteCode(data.code)
+        setActionNotice('New room code generated.')
+      }
+      if (data.type === 'room_closed') {
+        setReportNotice(data.message)
+        ws.close()
+        window.location.assign('/')
       }
     })
 
@@ -296,7 +308,10 @@ export default function Room() {
     window.localStorage.setItem(`tto:displayName:${roomId}`, displayName)
   }, [roomId, displayName, isTestPlayer])
 
-  const isHost = players.find((player) => player.id === playerId)?.isHost ?? false
+  const currentPlayer = players.find((player) => player.id === playerId) ?? null
+  const isHost = currentPlayer?.isHost ?? false
+  const isReady = currentPlayer?.isReady ?? false
+  const allReady = players.filter((player) => player.isConnected && !player.isHost).every((player) => player.isReady)
   const nameLocked = Boolean(accountUsername)
 
   useEffect(() => {
@@ -357,7 +372,10 @@ export default function Room() {
 
   const sendChat = () => {
     const ws = socketRef.current
-    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      setReportNotice('Not connected to chat.')
+      return
+    }
     ws.send(JSON.stringify({ type: 'chat', message }))
     setMessage('')
   }
@@ -401,9 +419,33 @@ export default function Room() {
     ws.send(JSON.stringify({ type: 'set_timer', minutes }))
   }
 
+  const setReady = (ready: boolean) => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'set_ready', ready }))
+  }
+
+  const rotateInviteCode = () => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'rotate_invite' }))
+  }
+
+  const closeRoom = () => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'close_room' }))
+  }
+
+  const leaveRoom = () => {
+    socketRef.current?.close()
+    window.location.assign('/')
+  }
+
   const copyInvite = async () => {
     if (!roomId) return
-    const url = `${window.location.origin}/room/${roomId}`
+    const code = inviteCode ?? roomId
+    const url = `${window.location.origin}/room/${roomId}?code=${encodeURIComponent(code)}`
     try {
       await navigator.clipboard.writeText(url)
       setActionNotice('Invite link copied.')
@@ -415,7 +457,7 @@ export default function Room() {
   const copyRoomCode = async () => {
     if (!roomId) return
     try {
-      await navigator.clipboard.writeText(roomId)
+      await navigator.clipboard.writeText(inviteCode ?? roomId)
       setActionNotice('Room code copied.')
     } catch {
       setActionNotice('Copy failed. Use the room code.')
@@ -525,11 +567,16 @@ export default function Room() {
   while (playerSlots.length < maxPlayers) {
     playerSlots.push(null)
   }
-  const inviteUrl = roomId ? `${window.location.origin}/room/${roomId}` : ''
+  const roomCode = inviteCode ?? roomId ?? '---'
+  const inviteUrl = roomId
+    ? `${window.location.origin}/room/${roomId}?code=${encodeURIComponent(inviteCode ?? roomId)}`
+    : ''
   const submittedCount = Object.keys(submissionSaved).length
   const nextCategory = categories[history.length]?.name
   const timerMin = settings?.minTime ?? 3
   const timerMax = settings?.maxTime ?? 20
+  const connectedPlayers = players.filter((player) => player.isConnected && !player.isHost)
+  const readyCount = connectedPlayers.filter((player) => player.isReady).length
 
   useEffect(() => {
     if (timer?.targetMinutes) {
@@ -576,7 +623,7 @@ export default function Room() {
       <div className="room-status-bar">
         <div>
           <p className="eyebrow">Room</p>
-          <h2>{roomId ?? 'unknown-room'}</h2>
+          <h2>{roomCode}</h2>
           <p className="muted">
             {isConnected ? 'Connected' : 'Connecting...'} • {players.length}/10 players • Host:{' '}
             {players.find((player) => player.isHost)?.displayName ?? 'TBD'}
@@ -621,6 +668,9 @@ export default function Room() {
                       <span className="player-name">{player.displayName}</span>
                       {player.isHost && <span className="host-badge">host</span>}
                     </div>
+                    <span className={`ready-indicator ${player.isReady ? 'ready' : 'not-ready'}`}>
+                      {player.isReady ? '✓' : '×'}
+                    </span>
                     <span className={`pill ${player.isConnected ? 'online' : 'offline'}`}>
                       {player.isConnected ? 'online' : 'offline'}
                     </span>
@@ -653,152 +703,175 @@ export default function Room() {
         <main className="board-col center-col" data-panel="main">
           {phase === 'lobby' ? (
             <div className="center-stack">
-              <div className="panel-card">
-                <h3>Lobby controls</h3>
-                <div className="timer">
-                  <span className="timer-value">{displayTimer()}</span>
-                  <span className="timer-label">{timerLabel()}</span>
-                </div>
-                <div className="timer-controls">
-                  <label className="field">
-                    Host timer (minutes)
-                    <input
-                      type="number"
-                      min={timerMin}
-                      max={timerMax}
-                      value={timerDraft}
-                      onChange={(e) => setTimerDraft(Number(e.target.value))}
+              {isHost ? (
+                <div className="panel-card">
+                  <h3>Lobby controls</h3>
+                  <div className="timer">
+                    <span className="timer-value">{displayTimer()}</span>
+                    <span className="timer-label">{timerLabel()}</span>
+                  </div>
+                  <div className="timer-controls">
+                    <label className="field">
+                      Host timer (minutes)
+                      <input
+                        type="number"
+                        min={timerMin}
+                        max={timerMax}
+                        value={timerDraft}
+                        onChange={(e) => setTimerDraft(Number(e.target.value))}
+                        disabled={!isHost || phase !== 'lobby'}
+                      />
+                    </label>
+                    <button
+                      className="btn outline"
+                      onClick={() => setTimerTarget(Math.min(timerMax, Math.max(timerMin, timerDraft)))}
                       disabled={!isHost || phase !== 'lobby'}
-                    />
-                  </label>
-                  <button
-                    className="btn outline"
-                    onClick={() => setTimerTarget(Math.min(timerMax, Math.max(timerMin, timerDraft)))}
-                    disabled={!isHost || phase !== 'lobby'}
-                  >
-                    Set timer
-                  </button>
+                    >
+                      Set timer
+                    </button>
+                  </div>
+                  <p className="muted">
+                    Ready: {readyCount}/{connectedPlayers.length} players
+                  </p>
+                  <p className="muted">Host controls the timer before the hunt starts.</p>
                 </div>
-                <p className="muted">Host controls the timer before the hunt starts.</p>
-              </div>
-
-              <div className="panel-card">
-                <div className="segment-tabs">
-                  <button
-                    className={`segment ${centerTab === 'presets' ? 'active' : ''}`}
-                    onClick={() => setCenterTab('presets')}
-                  >
-                    Presets
-                  </button>
-                  <button
-                    className={`segment ${centerTab === 'custom' ? 'active' : ''}`}
-                    onClick={() => setCenterTab('custom')}
-                  >
-                    Custom settings
-                  </button>
-                </div>
-                {centerTab === 'presets' ? (
-                  <div className="preset-grid">
-                    {categoryPresets.map((preset) => (
-                      <button
-                        key={preset.id}
-                        className={`preset-card ${presetId === preset.id ? 'active' : ''}`}
-                        onClick={() => {
-                          setPresetId(preset.id)
-                          setCategoryDrafts(buildCategoriesFromNames(preset.names))
-                        }}
-                      >
-                        <h4>{preset.label}</h4>
-                        <p className="muted">
-                          {preset.names.slice(0, 4).join(', ')}
-                          {preset.names.length > 4 ? '...' : ''}
-                        </p>
-                        <span className="pill">{preset.names.length} categories</span>
-                      </button>
+              ) : (
+                <div className="panel-card">
+                  <h3>Lobby</h3>
+                  <p className="muted">Waiting for the host to start.</p>
+                  <div className="category-list">
+                    {categories.map((category) => (
+                      <div key={category.id} className="category-chip">
+                        {category.name}
+                      </div>
                     ))}
                   </div>
-                ) : (
-                  <div className="settings-list">
-                    <div className="setting-row">
-                      <div className="setting-info">
-                        <h4>Audience Mode</h4>
-                        <p className="muted">Host-only toggle. Unlock spectator features.</p>
-                      </div>
-                      <div className="setting-control">
-                        <button
-                          className="btn outline"
-                          onClick={() => setAudienceMode(!audienceEnabled)}
-                          disabled={!isHost || !hasAudienceMode}
-                        >
-                          {audienceEnabled ? 'Disable' : 'Enable'}
-                        </button>
-                        {!hasAudienceMode ? (
-                          <button
-                            className="btn ghost"
-                            onClick={purchaseAudienceMode}
-                            disabled={!canPurchaseAudience || audienceLoading}
-                          >
-                            {audienceLoading ? 'Checkout...' : 'Purchase ($30)'}
-                          </button>
-                        ) : (
-                          <span className="muted">Owned</span>
-                        )}
-                      </div>
-                    </div>
-                    {!canPurchaseAudience && (
-                      <p className="muted">Sign in to purchase Audience Mode.</p>
-                    )}
-                    {audienceStatus && <p className="muted">{audienceStatus}</p>}
+                  <button className="btn primary" onClick={() => setReady(!isReady)}>
+                    {isReady ? 'Unready' : 'Ready'}
+                  </button>
+                  <p className="muted">Ready status updates with a short cooldown.</p>
+                </div>
+              )}
 
-                    <div className="setting-row">
-                      <div className="setting-info">
-                        <h4>Categories</h4>
-                        <p className="muted">3–12 categories. Changes apply before hunt starts.</p>
-                      </div>
-                      <div className="setting-control">
+              {isHost && (
+                <div className="panel-card">
+                  <div className="segment-tabs">
+                    <button
+                      className={`segment ${centerTab === 'presets' ? 'active' : ''}`}
+                      onClick={() => setCenterTab('presets')}
+                    >
+                      Presets
+                    </button>
+                    <button
+                      className={`segment ${centerTab === 'custom' ? 'active' : ''}`}
+                      onClick={() => setCenterTab('custom')}
+                    >
+                      Custom settings
+                    </button>
+                  </div>
+                  {centerTab === 'presets' ? (
+                    <div className="preset-grid">
+                      {categoryPresets.map((preset) => (
                         <button
-                          className="btn outline"
-                          onClick={() => setEditingCategories((prev) => !prev)}
-                          disabled={!isHost || phase !== 'lobby'}
+                          key={preset.id}
+                          className={`preset-card ${presetId === preset.id ? 'active' : ''}`}
+                          onClick={() => {
+                            setPresetId(preset.id)
+                            setCategoryDrafts(buildCategoriesFromNames(preset.names))
+                          }}
                         >
-                          {editingCategories ? 'Close editor' : 'Edit list'}
+                          <h4>{preset.label}</h4>
+                          <p className="muted">
+                            {preset.names.slice(0, 4).join(', ')}
+                            {preset.names.length > 4 ? '...' : ''}
+                          </p>
+                          <span className="pill">{preset.names.length} categories</span>
                         </button>
-                        <button className="btn ghost" onClick={resetCategoryDrafts}>
-                          Reset
-                        </button>
-                      </div>
+                      ))}
                     </div>
-                    {editingCategories && (
-                      <div className="category-editor">
-                        {categoryDrafts.map((category) => (
-                          <div key={category.id} className="category-row">
-                            <input
-                              type="text"
-                              placeholder="Category name"
-                              value={category.name}
-                              onChange={(e) => updateCategoryName(category.id, e.target.value)}
-                            />
-                            <button className="btn ghost" onClick={() => removeCategoryDraft(category.id)}>
-                              Remove
-                            </button>
-                          </div>
-                        ))}
-                        <div className="category-actions">
-                          <button className="btn outline" onClick={addCategoryDraft} disabled={validCategoryCount >= 12}>
-                            Add category
+                  ) : (
+                    <div className="settings-list">
+                      <div className="setting-row">
+                        <div className="setting-info">
+                          <h4>Audience Mode</h4>
+                          <p className="muted">Host-only toggle. Unlock spectator features.</p>
+                        </div>
+                        <div className="setting-control">
+                          <button
+                            className="btn outline"
+                            onClick={() => setAudienceMode(!audienceEnabled)}
+                            disabled={!isHost || !hasAudienceMode}
+                          >
+                            {audienceEnabled ? 'Disable' : 'Enable'}
                           </button>
-                          <button className="btn primary" onClick={saveCategories} disabled={!categoryCountOk}>
-                            Save categories
+                          {!hasAudienceMode ? (
+                            <button
+                              className="btn ghost"
+                              onClick={purchaseAudienceMode}
+                              disabled={!canPurchaseAudience || audienceLoading}
+                            >
+                              {audienceLoading ? 'Checkout...' : 'Purchase ($30)'}
+                            </button>
+                          ) : (
+                            <span className="muted">Owned</span>
+                          )}
+                        </div>
+                      </div>
+                      {!canPurchaseAudience && (
+                        <p className="muted">Sign in to purchase Audience Mode.</p>
+                      )}
+                      {audienceStatus && <p className="muted">{audienceStatus}</p>}
+
+                      <div className="setting-row">
+                        <div className="setting-info">
+                          <h4>Categories</h4>
+                          <p className="muted">3–12 categories. Changes apply before hunt starts.</p>
+                        </div>
+                        <div className="setting-control">
+                          <button
+                            className="btn outline"
+                            onClick={() => setEditingCategories((prev) => !prev)}
+                            disabled={!isHost || phase !== 'lobby'}
+                          >
+                            {editingCategories ? 'Close editor' : 'Edit list'}
+                          </button>
+                          <button className="btn ghost" onClick={resetCategoryDrafts}>
+                            Reset
                           </button>
                         </div>
-                        <p className="muted">
-                          {validCategoryCount} ready. Need 3-12. Changes apply before hunt starts.
-                        </p>
                       </div>
-                    )}
-                  </div>
-                )}
-              </div>
+                      {editingCategories && (
+                        <div className="category-editor">
+                          {categoryDrafts.map((category) => (
+                            <div key={category.id} className="category-row">
+                              <input
+                                type="text"
+                                placeholder="Category name"
+                                value={category.name}
+                                onChange={(e) => updateCategoryName(category.id, e.target.value)}
+                              />
+                              <button className="btn ghost" onClick={() => removeCategoryDraft(category.id)}>
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                          <div className="category-actions">
+                            <button className="btn outline" onClick={addCategoryDraft} disabled={validCategoryCount >= 12}>
+                              Add category
+                            </button>
+                            <button className="btn primary" onClick={saveCategories} disabled={!categoryCountOk}>
+                              Save categories
+                            </button>
+                          </div>
+                          <p className="muted">
+                            {validCategoryCount} ready. Need 3-12. Changes apply before hunt starts.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="center-stack">
@@ -1035,28 +1108,48 @@ export default function Room() {
 
       <div className="board-actions">
         <div className="actions-left">
-          <span className="room-pill">Room code: {roomId ?? '---'}</span>
+          <span className="room-pill">Room code: {roomCode}</span>
           <button className="btn outline action-btn" onClick={() => setInviteOpen(true)} disabled={!roomId}>
             <span className="btn-icon">INV</span>
             Invite
           </button>
+          {isHost && (
+            <button className="btn ghost action-btn" onClick={rotateInviteCode} disabled={!roomId}>
+              <span className="btn-icon">NEW</span>
+              New code
+            </button>
+          )}
           {actionNotice && <span className="muted">{actionNotice}</span>}
         </div>
         <div className="actions-right">
           {phase === 'lobby' && (
-            <button
-              className="btn primary action-btn"
-              onClick={startHunt}
-              disabled={phase !== 'lobby' || !isHost}
-            >
-              <span className="btn-icon">GO</span>
-              Start
+            isHost ? (
+              <button
+                className="btn primary action-btn"
+                onClick={startHunt}
+                disabled={phase !== 'lobby' || !allReady}
+              >
+                <span className="btn-icon">GO</span>
+                Start
+              </button>
+            ) : (
+              <button className="btn primary action-btn" onClick={() => setReady(!isReady)}>
+                <span className="btn-icon">RDY</span>
+                {isReady ? 'Unready' : 'Ready'}
+              </button>
+            )
+          )}
+          {isHost ? (
+            <button className="btn outline action-btn" onClick={closeRoom}>
+              <span className="btn-icon">X</span>
+              Close room
+            </button>
+          ) : (
+            <button className="btn outline action-btn" onClick={leaveRoom}>
+              <span className="btn-icon">OUT</span>
+              Leave
             </button>
           )}
-          <Link className="btn outline action-btn" to="/">
-            <span className="btn-icon">OUT</span>
-            Leave
-          </Link>
         </div>
       </div>
 
@@ -1087,7 +1180,7 @@ export default function Room() {
                   </button>
                 </div>
                 <div className="invite-row">
-                  <span className="room-pill">Code: {roomId ?? '---'}</span>
+                  <span className="room-pill">Code: {roomCode}</span>
                   <button className="btn ghost" onClick={copyRoomCode} disabled={!roomId}>
                     Copy code
                   </button>
