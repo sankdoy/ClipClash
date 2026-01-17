@@ -136,9 +136,16 @@ export default function Room() {
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const [inviteOpen, setInviteOpen] = useState(false)
   const [inviteCode, setInviteCode] = useState<string | null>(null)
+  const [audienceCode, setAudienceCode] = useState<string | null>(null)
   const [timerDraft, setTimerDraft] = useState(10)
+  const [playbackOrder, setPlaybackOrder] = useState<RoundEntry[]>([])
+  const [playbackIndex, setPlaybackIndex] = useState(0)
+  const [playbackPause, setPlaybackPause] = useState(false)
   const socketRef = useRef<WebSocket | null>(null)
+  const timerRef = useRef<TimerState | null>(null)
+  const submitTimersRef = useRef<Record<string, number>>({})
   const isTestPlayer = Boolean(new URLSearchParams(window.location.search).get('player'))
+  const isAudienceView = new URLSearchParams(window.location.search).get('audience') === '1'
 
   useEffect(() => {
     if (!roomId) return
@@ -147,19 +154,30 @@ export default function Room() {
 
     ws.addEventListener('open', () => {
       setIsConnected(true)
-      const storedToken = isTestPlayer ? null : window.localStorage.getItem(`tto:sessionToken:${roomId}`)
-      const storedName = isTestPlayer ? '' : window.localStorage.getItem(`tto:displayName:${roomId}`) ?? ''
+      const storedToken =
+        isTestPlayer || isAudienceView ? null : window.localStorage.getItem(`tto:sessionToken:${roomId}`)
+      const storedName =
+        isTestPlayer || isAudienceView ? '' : window.localStorage.getItem(`tto:displayName:${roomId}`) ?? ''
       const playerLabel = new URLSearchParams(window.location.search).get('player')
       const autoName =
         playerLabel && !storedName && !displayName ? `Player ${playerLabel}` : null
       const inviteFromUrl = new URLSearchParams(window.location.search).get('code') ?? roomId ?? undefined
+      const audienceFromUrl = new URLSearchParams(window.location.search).get('audienceCode') ?? undefined
       if (autoName) {
         setDisplayName(autoName)
       }
       if (storedName && !displayName) {
         setDisplayName(storedName)
       }
-      ws.send(JSON.stringify({ type: 'hello', sessionToken: storedToken ?? undefined, inviteCode: inviteFromUrl ?? undefined }))
+      ws.send(
+        JSON.stringify({
+          type: 'hello',
+          sessionToken: storedToken ?? undefined,
+          inviteCode: inviteFromUrl ?? undefined,
+          role: isAudienceView ? 'audience' : 'player',
+          audienceCode: audienceFromUrl ?? undefined
+        })
+      )
       if (autoName) {
         ws.send(JSON.stringify({ type: 'update_name', name: autoName }))
       }
@@ -186,6 +204,21 @@ export default function Room() {
         setSubmissionDrafts((prev) => mergeDrafts(prev, data.drafts))
         setReportCount(data.reportCount)
         setInviteCode(data.inviteCode ?? roomId ?? null)
+        setAudienceCode(data.audienceCode ?? null)
+      }
+      if (data.type === 'room_state') {
+        setPlayers(data.players)
+        setChat(data.chat)
+        setSettings(data.settings)
+        setTimer(data.timer)
+        setPhase(data.phase)
+        setCategories(data.categories)
+        setCategoryDrafts(data.categories)
+        setScoreboard(data.scoreboard)
+        setHistory(data.history)
+        setReportCount(data.reportCount)
+        setInviteCode(data.inviteCode ?? roomId ?? null)
+        setAudienceCode(data.audienceCode ?? null)
       }
       if (data.type === 'presence') {
         setPlayers(data.players)
@@ -298,19 +331,88 @@ export default function Room() {
 
   useEffect(() => {
     if (!roomId || !sessionToken) return
-    if (isTestPlayer) return
+    if (isTestPlayer || isAudienceView) return
     window.localStorage.setItem(`tto:sessionToken:${roomId}`, sessionToken)
-  }, [roomId, sessionToken, isTestPlayer])
+  }, [roomId, sessionToken, isTestPlayer, isAudienceView])
 
   useEffect(() => {
     if (!roomId) return
-    if (isTestPlayer) return
+    if (isTestPlayer || isAudienceView) return
     window.localStorage.setItem(`tto:displayName:${roomId}`, displayName)
-  }, [roomId, displayName, isTestPlayer])
+  }, [roomId, displayName, isTestPlayer, isAudienceView])
+
+  useEffect(() => {
+    timerRef.current = timer
+  }, [timer])
+
+  useEffect(() => {
+    if (phase !== 'rounds' || !round) {
+      setPlaybackOrder([])
+      setPlaybackIndex(0)
+      setPlaybackPause(false)
+      return
+    }
+    const validEntries = (round.entries ?? []).filter((entry) => entry.url && isTikTokUrl(entry.url))
+    const shuffled = shuffleEntries(validEntries)
+    setPlaybackOrder(shuffled)
+    setPlaybackIndex(0)
+    setPlaybackPause(false)
+  }, [phase, round?.categoryId])
+
+  useEffect(() => {
+    if (phase !== 'rounds') return
+    if (playbackOrder.length === 0) return
+    let timeout: number | null = null
+    if (playbackPause) {
+      if (playbackIndex >= playbackOrder.length - 1) return
+      timeout = window.setTimeout(() => {
+        setPlaybackPause(false)
+        setPlaybackIndex((prev) => Math.min(prev + 1, playbackOrder.length - 1))
+      }, 2000)
+    } else {
+      timeout = window.setTimeout(() => {
+        setPlaybackPause(true)
+      }, 10000)
+    }
+    return () => {
+      if (timeout) window.clearTimeout(timeout)
+    }
+  }, [phase, playbackOrder.length, playbackIndex, playbackPause])
+
+  useEffect(() => {
+    let interval: number | null = null
+    const updateHuntTitle = () => {
+      const current = timerRef.current
+      const remaining = current?.huntRemainingSeconds ?? (settings?.defaultTime ?? 10) * 60
+      document.title = `${formatSeconds(remaining)} • ClipClash`
+    }
+
+    if (phase === 'hunt') {
+      updateHuntTitle()
+      interval = window.setInterval(updateHuntTitle, 1000)
+    } else if (phase === 'intermission') {
+      let flip = false
+      const updateIntermissionTitle = () => {
+        document.title = flip ? '⏸ Intermission • ClipClash' : 'ClipClash'
+        flip = !flip
+      }
+      updateIntermissionTitle()
+      interval = window.setInterval(updateIntermissionTitle, 800)
+    } else {
+      document.title = 'ClipClash'
+    }
+
+    return () => {
+      if (interval) {
+        window.clearInterval(interval)
+      }
+    }
+  }, [phase, settings?.defaultTime])
 
   const currentPlayer = players.find((player) => player.id === playerId) ?? null
   const isHost = currentPlayer?.isHost ?? false
   const isReady = currentPlayer?.isReady ?? false
+  const isDone = currentPlayer?.isDone ?? false
   const allReady = players.filter((player) => player.isConnected && !player.isHost).every((player) => player.isReady)
   const nameLocked = Boolean(accountUsername)
 
@@ -376,6 +478,7 @@ export default function Room() {
       setReportNotice('Not connected to chat.')
       return
     }
+    if (message.length > 200) return
     ws.send(JSON.stringify({ type: 'chat', message }))
     setMessage('')
   }
@@ -425,6 +528,24 @@ export default function Room() {
     ws.send(JSON.stringify({ type: 'set_ready', ready }))
   }
 
+  const setDone = (done: boolean) => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'set_done', done }))
+  }
+
+  const assignHost = (playerId: string) => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'assign_host', playerId }))
+  }
+
+  const kickPlayer = (playerId: string) => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'kick_player', playerId }))
+  }
+
   const rotateInviteCode = () => {
     const ws = socketRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return
@@ -461,6 +582,17 @@ export default function Room() {
       setActionNotice('Room code copied.')
     } catch {
       setActionNotice('Copy failed. Use the room code.')
+    }
+  }
+
+  const copyAudienceInvite = async () => {
+    if (!roomId || !audienceCode) return
+    const url = `${window.location.origin}/room/${roomId}?audience=1&audienceCode=${encodeURIComponent(audienceCode)}`
+    try {
+      await navigator.clipboard.writeText(url)
+      setActionNotice('Audience link copied.')
+    } catch {
+      setActionNotice('Copy failed. Share the audience code.')
     }
   }
 
@@ -571,12 +703,19 @@ export default function Room() {
   const inviteUrl = roomId
     ? `${window.location.origin}/room/${roomId}?code=${encodeURIComponent(inviteCode ?? roomId)}`
     : ''
+  const audienceUrl =
+    roomId && audienceCode
+      ? `${window.location.origin}/room/${roomId}?audience=1&audienceCode=${encodeURIComponent(audienceCode)}`
+      : ''
   const submittedCount = Object.keys(submissionSaved).length
   const nextCategory = categories[history.length]?.name
   const timerMin = settings?.minTime ?? 3
   const timerMax = settings?.maxTime ?? 20
   const connectedPlayers = players.filter((player) => player.isConnected && !player.isHost)
   const readyCount = connectedPlayers.filter((player) => player.isReady).length
+  const chatLimit = 200
+  const chatCount = message.length
+  const chatTooLong = chatCount > chatLimit
 
   useEffect(() => {
     if (timer?.targetMinutes) {
@@ -587,7 +726,7 @@ export default function Room() {
   const submitLink = (categoryId: string) => {
     const url = (submissionDrafts[categoryId] ?? '').trim()
     if (!isTikTokUrl(url)) {
-      setSubmissionErrors((prev) => ({ ...prev, [categoryId]: 'TikTok links only.' }))
+      setSubmissionErrors((prev) => ({ ...prev, [categoryId]: 'Invalid TikTok link.' }))
       return
     }
     const ws = socketRef.current
@@ -599,6 +738,41 @@ export default function Room() {
     const ws = socketRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return
     ws.send(JSON.stringify({ type: 'save_draft', categoryId, url }))
+  }
+
+  const queueSubmission = (categoryId: string, url: string, immediate = false) => {
+    const timers = submitTimersRef.current
+    if (timers[categoryId]) {
+      window.clearTimeout(timers[categoryId])
+    }
+    const run = () => {
+      const trimmed = url.trim()
+      if (!trimmed) {
+        setSubmissionErrors((prev) => {
+          const next = { ...prev }
+          delete next[categoryId]
+          return next
+        })
+        return
+      }
+      if (!isTikTokUrl(trimmed)) {
+        setSubmissionErrors((prev) => ({ ...prev, [categoryId]: 'Invalid TikTok link.' }))
+        return
+      }
+      setSubmissionErrors((prev) => {
+        const next = { ...prev }
+        delete next[categoryId]
+        return next
+      })
+      const ws = socketRef.current
+      if (!ws || ws.readyState !== WebSocket.OPEN) return
+      ws.send(JSON.stringify({ type: 'submit_submission', categoryId, url: trimmed }))
+    }
+    if (immediate) {
+      run()
+      return
+    }
+    timers[categoryId] = window.setTimeout(run, 500)
   }
 
   const displayTimer = () => {
@@ -616,6 +790,53 @@ export default function Room() {
     if (phase === 'hunt') return 'Hunt ends in'
     if (phase === 'intermission') return 'Intermission'
     return 'Current target'
+  }
+
+  if (isAudienceView) {
+    return (
+      <div className="page room audience">
+        <div className="room-status-bar">
+          <div>
+            <p className="eyebrow">Audience</p>
+            <h2>{roomCode}</h2>
+            <p className="muted">{isConnected ? 'Connected' : 'Connecting...'} • {phase}</p>
+          </div>
+        </div>
+        <div className="panel-card">
+          {phase === 'rounds' && round ? (
+            <>
+              <h3>Vote now</h3>
+              <p className="muted">Category: {round.categoryName}</p>
+              <div className="round-grid">
+                {round.entries.map((entry) => (
+                  <button
+                    key={entry.id}
+                    className={`round-entry ${voteSelection === entry.id ? 'selected' : ''}`}
+                    onClick={() => sendVoteEntry(entry.id)}
+                    disabled={!!tiebreak}
+                  >
+                    <span>{entry.label}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <h3>Waiting for the next round</h3>
+              <p className="muted">Stay here to vote when the host starts voting.</p>
+            </>
+          )}
+        </div>
+        <div className="board-actions">
+          <div className="actions-right">
+            <button className="btn outline action-btn" onClick={leaveRoom}>
+              <span className="btn-icon">OUT</span>
+              Leave
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -662,15 +883,30 @@ export default function Room() {
             <div className="player-stack">
               {playerSlots.map((player, index) =>
                 player ? (
-                  <div key={player.id} className="player-slot">
+                  <div key={player.id} className={`player-slot ${player.isHost ? 'host' : ''}`}>
                     <div className="player-avatar">{player.displayName.slice(0, 1).toUpperCase()}</div>
                     <div className="player-meta">
                       <span className="player-name">{player.displayName}</span>
-                      {player.isHost && <span className="host-badge">host</span>}
                     </div>
-                    <span className={`ready-indicator ${player.isReady ? 'ready' : 'not-ready'}`}>
-                      {player.isReady ? '✓' : '×'}
-                    </span>
+                    {(phase === 'lobby' || phase === 'hunt') && (
+                      <span
+                        className={`ready-indicator ${
+                          (phase === 'hunt' ? player.isDone : player.isReady) ? 'ready' : 'not-ready'
+                        }`}
+                      >
+                        {(phase === 'hunt' ? player.isDone : player.isReady) ? '✓' : '×'}
+                      </span>
+                    )}
+                    {isHost && !player.isHost && player.isConnected && (
+                      <div className="player-actions">
+                        <button className="btn ghost" onClick={() => assignHost(player.id)}>
+                          Make host
+                        </button>
+                        <button className="btn ghost danger" onClick={() => kickPlayer(player.id)}>
+                          Kick
+                        </button>
+                      </div>
+                    )}
                     <span className={`pill ${player.isConnected ? 'online' : 'offline'}`}>
                       {player.isConnected ? 'online' : 'offline'}
                     </span>
@@ -820,7 +1056,21 @@ export default function Room() {
                       {!canPurchaseAudience && (
                         <p className="muted">Sign in to purchase Audience Mode.</p>
                       )}
-                      {audienceStatus && <p className="muted">{audienceStatus}</p>}
+                    {audienceStatus && <p className="muted">{audienceStatus}</p>}
+                    {audienceEnabled && isHost && audienceCode && (
+                      <div className="setting-row">
+                        <div className="setting-info">
+                          <h4>Audience link</h4>
+                          <p className="muted">Share with viewers to vote. Audience cannot join without this.</p>
+                        </div>
+                        <div className="setting-control">
+                          <span className="room-pill">{audienceCode}</span>
+                          <button className="btn outline" onClick={copyAudienceInvite}>
+                            Copy link
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                       <div className="setting-row">
                         <div className="setting-info">
@@ -896,7 +1146,12 @@ export default function Room() {
 
               {phase === 'hunt' && (
                 <div className="panel-card">
-                  <h3>Submissions</h3>
+                  <div className="panel-head">
+                    <h3>Submissions</h3>
+                    <button className="btn outline" onClick={() => setDone(!isDone)}>
+                      {isDone ? 'Not done' : 'Done'}
+                    </button>
+                  </div>
                   <p className="muted">
                     Submitted: {submittedCount}/{categories.length}
                   </p>
@@ -906,16 +1161,16 @@ export default function Room() {
                         <div>
                           <span>{category.name}</span>
                           {submissionSaved[category.id] && (
-                            <p className="muted">Saved: {submissionSaved[category.id]}</p>
+                            <p className="muted">✅ Saved</p>
                           )}
-                          {submissionDrafts[category.id] && !submissionSaved[category.id] && (
-                            <p className="muted">Draft saved locally.</p>
+                          {!submissionSaved[category.id] && submissionErrors[category.id] && (
+                            <p className="error">❌ {submissionErrors[category.id]}</p>
                           )}
-                          {!submissionDrafts[category.id] && !submissionSaved[category.id] && (
+                          {!submissionSaved[category.id] && !submissionErrors[category.id] && submissionDrafts[category.id] && (
+                            <p className="muted">Draft in progress.</p>
+                          )}
+                          {!submissionDrafts[category.id] && !submissionSaved[category.id] && !submissionErrors[category.id] && (
                             <p className="muted">No submission yet.</p>
-                          )}
-                          {submissionErrors[category.id] && (
-                            <p className="error">{submissionErrors[category.id]}</p>
                           )}
                         </div>
                         <div className="category-actions">
@@ -924,14 +1179,15 @@ export default function Room() {
                             placeholder="Paste TikTok URL"
                             value={submissionDrafts[category.id] ?? ''}
                             onChange={(e) =>
-                              setSubmissionDrafts((prev) => ({ ...prev, [category.id]: e.target.value }))
+                              setSubmissionDrafts((prev) => {
+                                const next = { ...prev, [category.id]: e.target.value }
+                                queueSubmission(category.id, e.target.value)
+                                return next
+                              })
                             }
-                            onBlur={(e) => saveDraft(category.id, e.target.value)}
+                            onBlur={(e) => queueSubmission(category.id, e.target.value, true)}
                             disabled={phase !== 'hunt'}
                           />
-                          <button className="btn ghost" onClick={() => submitLink(category.id)} disabled={phase !== 'hunt'}>
-                            Save
-                          </button>
                         </div>
                       </div>
                     ))}
@@ -945,6 +1201,20 @@ export default function Room() {
                   <p className="muted">
                     Category: <strong>{round?.categoryName ?? '...'}</strong>
                   </p>
+                  <div className="playback-card">
+                    {playbackOrder.length === 0 ? (
+                      <p className="muted">No valid TikTok submissions to play.</p>
+                    ) : playbackPause ? (
+                      <p className="muted">Up next...</p>
+                    ) : (
+                      <>
+                        <p className="muted">
+                          Now playing: <strong>TikTok {playbackIndex + 1}</strong>
+                        </p>
+                        <TikTokEmbed url={playbackOrder[playbackIndex]?.url ?? ''} />
+                      </>
+                    )}
+                  </div>
                   <div className="round-grid">
                     {(round?.entries ?? []).map((entry) => (
                       <button
@@ -1088,9 +1358,13 @@ export default function Room() {
                 type="text"
                 placeholder="Type message"
                 value={message}
+                maxLength={chatLimit}
                 onChange={(e) => setMessage(e.target.value)}
               />
-              <button className="btn primary" type="submit" disabled={!message.trim()}>
+              <span className={`chat-counter ${chatTooLong ? 'over' : ''}`}>
+                {chatCount}/{chatLimit}
+              </span>
+              <button className="btn primary" type="submit" disabled={!message.trim() || chatTooLong}>
                 Send
               </button>
             </form>
@@ -1122,22 +1396,15 @@ export default function Room() {
           {actionNotice && <span className="muted">{actionNotice}</span>}
         </div>
         <div className="actions-right">
-          {phase === 'lobby' && (
-            isHost ? (
-              <button
-                className="btn primary action-btn"
-                onClick={startHunt}
-                disabled={phase !== 'lobby' || !allReady}
-              >
-                <span className="btn-icon">GO</span>
-                Start
-              </button>
-            ) : (
-              <button className="btn primary action-btn" onClick={() => setReady(!isReady)}>
-                <span className="btn-icon">RDY</span>
-                {isReady ? 'Unready' : 'Ready'}
-              </button>
-            )
+          {phase === 'lobby' && isHost && (
+            <button
+              className="btn primary action-btn"
+              onClick={startHunt}
+              disabled={phase !== 'lobby' || !allReady}
+            >
+              <span className="btn-icon">GO</span>
+              Start
+            </button>
           )}
           {isHost ? (
             <button className="btn outline action-btn" onClick={closeRoom}>
@@ -1185,6 +1452,14 @@ export default function Room() {
                     Copy code
                   </button>
                 </div>
+                {audienceEnabled && isHost && audienceCode && (
+                  <div className="invite-row">
+                    <span className="room-pill">Audience: {audienceCode}</span>
+                    <button className="btn ghost" onClick={copyAudienceInvite} disabled={!roomId}>
+                      Copy audience link
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1256,4 +1531,36 @@ function buildShareSummary(scoreboard: ScoreboardEntry[], history: RoundHistoryE
     })
   }
   return lines.join('\n')
+}
+
+function shuffleEntries(entries: RoundEntry[]) {
+  const result = [...entries]
+  for (let i = result.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const temp = result[i]
+    result[i] = result[j]
+    result[j] = temp
+  }
+  return result
+}
+
+function extractTikTokId(url: string) {
+  const match = url.match(/\/video\/(\d+)/)
+  return match?.[1] ?? null
+}
+
+function TikTokEmbed({ url }: { url: string }) {
+  const id = extractTikTokId(url)
+  if (!id) {
+    return <p className="muted">Unable to embed this TikTok.</p>
+  }
+  return (
+    <iframe
+      className="tiktok-embed"
+      title={`TikTok ${id}`}
+      src={`https://www.tiktok.com/embed/v2/${id}`}
+      allow="autoplay; fullscreen"
+      loading="lazy"
+    />
+  )
 }

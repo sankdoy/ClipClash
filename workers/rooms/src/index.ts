@@ -29,6 +29,8 @@ export interface Env {
 type Session = {
   playerId: string | null
   sessionToken: string | null
+  role: 'player' | 'audience'
+  audienceId: string | null
   accountId: string | null
   accountUsername: string | null
   displayName: string
@@ -63,6 +65,8 @@ type PersistedState = {
   chat: ChatMessage[]
   players: PlayerRecord[]
   readyByPlayer: Record<string, boolean>
+  doneByPlayer: Record<string, boolean>
+  requiredDoneIds: string[]
   categories: Category[]
   draftsByPlayer: Record<string, DraftsByCategory>
   submissions: Record<string, Submission[]>
@@ -70,6 +74,7 @@ type PersistedState = {
   round: RoundState | null
   tiebreak: TieBreakState | null
   votesByPlayer: Record<string, string>
+  votesByAudience: Record<string, string>
   scoreboard: ScoreboardEntry[]
   history: RoundHistoryEntry[]
   hostId?: string
@@ -79,6 +84,7 @@ type PersistedState = {
   resultsRecorded?: boolean
   inviteCode?: string
   isClosed?: boolean
+  audienceCode?: string
 }
 
 const defaultSettings: Settings = {
@@ -103,11 +109,14 @@ const chatCooldownMs = 800
 const voteCooldownMs = 400
 const readyCooldownMs = 2000
 const reportCooldownMs = 3000
+const maxUrlLength = 4096
 
 const helloSchema = z.object({
   type: z.literal('hello'),
   sessionToken: z.string().min(1).optional(),
-  inviteCode: z.string().min(1).optional()
+  inviteCode: z.string().min(1).optional(),
+  audienceCode: z.string().min(1).optional(),
+  role: z.enum(['player', 'audience']).optional()
 })
 
 const updateNameSchema = z.object({
@@ -117,7 +126,7 @@ const updateNameSchema = z.object({
 
 const chatSchema = z.object({
   type: z.literal('chat'),
-  message: z.string().min(1).max(240)
+  message: z.string().min(1).max(200)
 })
 
 const setTimerSchema = z.object({
@@ -130,10 +139,17 @@ const setReadySchema = z.object({
   ready: z.boolean()
 })
 
+const setDoneSchema = z.object({
+  type: z.literal('set_done'),
+  done: z.boolean()
+})
+
 const startHuntSchema = z.object({ type: z.literal('start_hunt') })
 const resetMatchSchema = z.object({ type: z.literal('reset_match') })
 const closeRoomSchema = z.object({ type: z.literal('close_room') })
 const rotateInviteSchema = z.object({ type: z.literal('rotate_invite') })
+const assignHostSchema = z.object({ type: z.literal('assign_host'), playerId: z.string().min(1) })
+const kickPlayerSchema = z.object({ type: z.literal('kick_player'), playerId: z.string().min(1) })
 
 const updateCategoriesSchema = z.object({
   type: z.literal('update_categories'),
@@ -143,13 +159,13 @@ const updateCategoriesSchema = z.object({
 const saveDraftSchema = z.object({
   type: z.literal('save_draft'),
   categoryId: z.string().min(1),
-  url: z.string().max(400)
+  url: z.string().max(maxUrlLength)
 })
 
 const submitSubmissionSchema = z.object({
   type: z.literal('submit_submission'),
   categoryId: z.string().min(1),
-  url: z.string().min(1).max(400)
+  url: z.string().min(1).max(maxUrlLength)
 })
 
 const voteSubmissionSchema = z.object({
@@ -178,10 +194,13 @@ const clientMessageSchema = z.union([
   chatSchema,
   setTimerSchema,
   setReadySchema,
+  setDoneSchema,
   startHuntSchema,
   resetMatchSchema,
   closeRoomSchema,
   rotateInviteSchema,
+  assignHostSchema,
+  kickPlayerSchema,
   updateCategoriesSchema,
   saveDraftSchema,
   submitSubmissionSchema,
@@ -297,6 +316,9 @@ export class RoomsDO implements DurableObject {
   sessions: Map<WebSocket, Session>
   players: Map<string, PlayerRecord>
   readyByPlayer: Map<string, boolean>
+  doneByPlayer: Map<string, boolean>
+  requiredDoneIds: Set<string>
+  votesByAudience: Map<string, string>
   chat: ChatMessage[]
   phase: Phase
   settings: Settings
@@ -318,6 +340,7 @@ export class RoomsDO implements DurableObject {
   resultsRecorded: boolean
   inviteCode: string | null
   isClosed: boolean
+  audienceCode: string | null
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state
@@ -325,6 +348,9 @@ export class RoomsDO implements DurableObject {
     this.sessions = new Map()
     this.players = new Map()
     this.readyByPlayer = new Map()
+    this.doneByPlayer = new Map()
+    this.requiredDoneIds = new Set()
+    this.votesByAudience = new Map()
     this.chat = []
     this.phase = 'lobby'
     this.settings = { ...defaultSettings }
@@ -354,6 +380,7 @@ export class RoomsDO implements DurableObject {
     this.resultsRecorded = false
     this.inviteCode = null
     this.isClosed = false
+    this.audienceCode = null
 
     this.state.blockConcurrencyWhile(async () => {
       const stored = await this.state.storage.get<PersistedState>('room_state')
@@ -364,6 +391,9 @@ export class RoomsDO implements DurableObject {
       this.chat = stored.chat ?? []
       this.players = new Map((stored.players ?? []).map((player) => [player.id, player]))
       this.readyByPlayer = new Map(Object.entries(stored.readyByPlayer ?? {}).map(([id, ready]) => [id, ready]))
+      this.doneByPlayer = new Map(Object.entries(stored.doneByPlayer ?? {}).map(([id, done]) => [id, done]))
+      this.requiredDoneIds = new Set(stored.requiredDoneIds ?? [])
+      this.votesByAudience = new Map(Object.entries(stored.votesByAudience ?? {}))
       this.categories = stored.categories ?? [...defaultCategories]
       this.draftsByPlayer = new Map(
         Object.entries(stored.draftsByPlayer ?? {}).map(([playerId, drafts]) => [playerId, drafts])
@@ -381,6 +411,7 @@ export class RoomsDO implements DurableObject {
       this.resultsRecorded = stored.resultsRecorded ?? false
       this.inviteCode = stored.inviteCode ?? null
       this.isClosed = stored.isClosed ?? false
+      this.audienceCode = stored.audienceCode ?? null
       this.submissions = new Map(
         Object.entries(stored.submissions ?? {}).map(([categoryId, items]) => [
           categoryId,
@@ -402,6 +433,8 @@ export class RoomsDO implements DurableObject {
     const session: Session = {
       playerId: null,
       sessionToken: null,
+      role: 'player',
+      audienceId: null,
       accountId: account?.id ?? null,
       accountUsername: account?.username ?? null,
       displayName: 'Player',
@@ -429,7 +462,7 @@ export class RoomsDO implements DurableObject {
     const session = this.sessions.get(ws)
     if (!session) return
 
-    if (parsed.type !== 'hello' && !session.playerId) {
+    if (parsed.type !== 'hello' && session.role === 'player' && !session.playerId) {
       ws.send(toServerMessage({ type: 'error', message: 'Not authenticated.' }))
       return
     }
@@ -441,6 +474,47 @@ export class RoomsDO implements DurableObject {
       if (this.isClosed) {
         ws.send(toServerMessage({ type: 'room_closed', message: 'Room closed by host.' }))
         ws.close(1000, 'Room closed')
+        return
+      }
+
+      const requestedRole = parsed.role ?? 'player'
+      if (requestedRole === 'audience') {
+        if (!this.settings.audienceModeEnabled) {
+          ws.send(toServerMessage({ type: 'error', message: 'Audience Mode not enabled.' }))
+          ws.close(1000, 'Audience disabled')
+          return
+        }
+        if (!this.audienceCode || parsed.audienceCode?.trim() !== this.audienceCode) {
+          ws.send(toServerMessage({ type: 'error', message: 'Invalid audience code.' }))
+          ws.close(1000, 'Invalid audience code')
+          return
+        }
+        session.role = 'audience'
+        session.audienceId = crypto.randomUUID()
+        session.sessionToken = generateSessionToken()
+        this.sessions.set(ws, session)
+        ws.send(
+          toServerMessage({
+            type: 'welcome',
+            sessionToken: session.sessionToken,
+            playerId: session.audienceId,
+            roomId: this.state.id.toString(),
+            phase: this.phase,
+            players: this.getPlayers(),
+            chat: this.chat,
+            settings: this.settings,
+            timer: this.timer,
+            categories: this.categories,
+            scoreboard: this.getScoreboard(),
+            history: this.history,
+            drafts: {},
+            reportCount: this.reports.length,
+            inviteCode: this.inviteCode ?? undefined,
+            audienceCode: this.audienceCode ?? undefined
+          })
+        )
+        this.broadcastRoomState()
+        this.persistState()
         return
       }
 
@@ -471,6 +545,9 @@ export class RoomsDO implements DurableObject {
         if (!this.readyByPlayer.has(playerId)) {
           this.readyByPlayer.set(playerId, false)
         }
+        if (!this.doneByPlayer.has(playerId)) {
+          this.doneByPlayer.set(playerId, false)
+        }
       } else {
         this.players.set(playerId, {
           id: playerId,
@@ -480,6 +557,7 @@ export class RoomsDO implements DurableObject {
           accountId: session.accountId ?? undefined
         })
         this.readyByPlayer.set(playerId, false)
+        this.doneByPlayer.set(playerId, false)
       }
 
       if (session.accountId) {
@@ -527,16 +605,18 @@ export class RoomsDO implements DurableObject {
           history: this.history,
           drafts: this.getDrafts(playerId),
           reportCount: this.reports.length,
-          inviteCode: this.inviteCode ?? undefined
+          inviteCode: this.inviteCode ?? undefined,
+          audienceCode: this.audienceCode ?? undefined
         })
       )
 
-      this.broadcast({ type: 'presence', players: this.getPlayers() })
+      this.broadcastRoomState()
       this.persistState()
       return
     }
 
     if (parsed.type === 'update_name') {
+      if (session.role !== 'player') return
       if (!session.playerId) return
       if (session.accountUsername && parsed.name.trim() !== session.accountUsername) {
         ws.send(toServerMessage({ type: 'error', message: 'Use your account profile to change username.' }))
@@ -556,12 +636,13 @@ export class RoomsDO implements DurableObject {
           isConnected: true
         })
       }
-      this.broadcast({ type: 'presence', players: this.getPlayers() })
+      this.broadcastRoomState()
       this.persistState()
       return
     }
 
     if (parsed.type === 'chat') {
+      if (session.role !== 'player') return
       if (Date.now() - session.lastChatAt < chatCooldownMs) {
         ws.send(toServerMessage({ type: 'error', message: 'Slow down.' }))
         return
@@ -576,7 +657,7 @@ export class RoomsDO implements DurableObject {
         id: crypto.randomUUID(),
         playerId: session.playerId!,
         name: session.displayName,
-        message: text.slice(0, 240),
+        message: text.slice(0, 200),
         sentAt: Date.now()
       }
       session.lastChatAt = Date.now()
@@ -586,6 +667,7 @@ export class RoomsDO implements DurableObject {
     }
 
     if (parsed.type === 'set_timer') {
+      if (session.role !== 'player') return
       if (this.phase !== 'lobby') return
       if (this.hostId !== session.playerId) return
       const minutes = Math.min(this.settings.maxTime, Math.max(this.settings.minTime, parsed.minutes))
@@ -594,7 +676,7 @@ export class RoomsDO implements DurableObject {
       this.timer.intermissionRemainingSeconds = null
       this.timer.voteHigherCount = 0
       this.timer.voteLowerCount = 0
-      this.timer.playerCount = this.sessions.size
+      this.timer.playerCount = this.players.size
       this.timer.lastTickAt = Date.now()
       this.broadcast({ type: 'timer', phase: this.phase, timer: this.timer })
       this.persistState()
@@ -602,22 +684,45 @@ export class RoomsDO implements DurableObject {
     }
 
     if (parsed.type === 'set_ready') {
+      if (session.role !== 'player') return
       if (this.phase !== 'lobby') return
       if (Date.now() - session.lastReadyAt < readyCooldownMs) return
       this.readyByPlayer.set(session.playerId!, parsed.ready)
       session.lastReadyAt = Date.now()
       this.sessions.set(ws, session)
-      this.broadcast({ type: 'presence', players: this.getPlayers() })
+      this.broadcastRoomState()
       this.persistState()
       return
     }
 
+    if (parsed.type === 'set_done') {
+      if (session.role !== 'player') return
+      if (this.phase !== 'hunt') return
+      this.doneByPlayer.set(session.playerId!, parsed.done)
+      this.broadcastRoomState()
+      if (this.allRequiredDone()) {
+        this.endHuntEarly()
+      } else {
+        this.persistState()
+      }
+      return
+    }
+
     if (parsed.type === 'start_hunt') {
+      if (session.role !== 'player') return
       if (this.phase !== 'lobby') return
       if (this.hostId !== session.playerId) return
       if (!this.allPlayersReady()) {
         ws.send(toServerMessage({ type: 'error', message: 'Waiting for players to ready up.' }))
         return
+      }
+      this.requiredDoneIds = new Set(
+        Array.from(this.players.values())
+          .filter((player) => player.isConnected && player.id !== this.hostId)
+          .map((player) => player.id)
+      )
+      for (const id of this.players.keys()) {
+        this.doneByPlayer.set(id, false)
       }
       this.phase = 'hunt'
       this.timer.huntRemainingSeconds = this.timer.targetMinutes * 60
@@ -628,12 +733,34 @@ export class RoomsDO implements DurableObject {
     }
 
     if (parsed.type === 'reset_match') {
+      if (session.role !== 'player') return
       if (this.hostId !== session.playerId) return
       this.resetMatch()
       this.broadcast({ type: 'timer', phase: this.phase, timer: this.timer })
       this.broadcast({ type: 'scoreboard', scoreboard: this.getScoreboard(), history: this.history })
       this.persistState()
       await this.ensureAlarm()
+    }
+
+    if (parsed.type === 'assign_host') {
+      if (session.role !== 'player') return
+      if (this.hostId !== session.playerId) return
+      const target = this.players.get(parsed.playerId)
+      if (!target || !target.isConnected) return
+      this.hostId = target.id
+      this.broadcastRoomState()
+      this.persistState()
+      return
+    }
+
+    if (parsed.type === 'kick_player') {
+      if (session.role !== 'player') return
+      if (this.hostId !== session.playerId) return
+      if (parsed.playerId === session.playerId) return
+      this.kickPlayer(parsed.playerId)
+      this.broadcastRoomState()
+      this.persistState()
+      return
     }
 
     if (parsed.type === 'close_room') {
@@ -656,6 +783,7 @@ export class RoomsDO implements DurableObject {
     }
 
     if (parsed.type === 'update_categories') {
+      if (session.role !== 'player') return
       if (this.hostId !== session.playerId) return
       if (this.phase !== 'lobby') return
       const cleaned = this.cleanCategories(parsed.categories)
@@ -672,6 +800,7 @@ export class RoomsDO implements DurableObject {
     }
 
     if (parsed.type === 'set_audience_mode') {
+      if (session.role !== 'player') return
       if (this.hostId !== session.playerId) return
       if (!session.accountId) {
         ws.send(toServerMessage({ type: 'error', message: 'Sign in to enable Audience Mode.' }))
@@ -683,7 +812,11 @@ export class RoomsDO implements DurableObject {
         return
       }
       this.settings = { ...this.settings, audienceModeEnabled: parsed.enabled }
+      if (parsed.enabled && !this.audienceCode) {
+        this.audienceCode = `aud-${Math.random().toString(36).slice(2, 8)}`
+      }
       this.broadcast({ type: 'settings', settings: this.settings })
+      this.broadcastRoomState()
       this.persistState()
     }
 
@@ -693,14 +826,24 @@ export class RoomsDO implements DurableObject {
       if (Date.now() - session.lastVoteAt < voteCooldownMs) return
       const entry = this.round.entries.find((item) => item.id === parsed.entryId)
       if (!entry) return
-      this.votesByPlayer.set(session.playerId!, parsed.entryId)
+      if (session.role === 'audience') {
+        if (!session.audienceId) return
+        this.votesByAudience.set(session.audienceId, parsed.entryId)
+      } else {
+        this.votesByPlayer.set(session.playerId!, parsed.entryId)
+      }
       session.lastVoteAt = Date.now()
       this.round.votesByEntryId = this.tallyVotes()
       this.broadcast({ type: 'round_start', round: this.round })
-      this.persistState()
+      if (this.allConnectedPlayersVoted()) {
+        this.finishRound()
+      } else {
+        this.persistState()
+      }
     }
 
     if (parsed.type === 'rps_choice') {
+      if (session.role !== 'player') return
       if (this.phase !== 'rounds' || !this.tiebreak) return
       if (!this.tiebreak.entryIds.includes(session.playerId!)) return
       this.tiebreak.choicesByEntryId[session.playerId!] = parsed.choice
@@ -716,6 +859,7 @@ export class RoomsDO implements DurableObject {
     }
 
     if (parsed.type === 'report') {
+      if (session.role !== 'player') return
       if (Date.now() - session.lastReportAt < reportCooldownMs) return
       this.reports.push({
         id: crypto.randomUUID(),
@@ -728,19 +872,21 @@ export class RoomsDO implements DurableObject {
     }
 
     if (parsed.type === 'save_draft') {
+      if (session.role !== 'player') return
       const url = parsed.url.trim()
       if (!this.categories.find((category) => category.id === parsed.categoryId)) {
         ws.send(toServerMessage({ type: 'error', message: 'Unknown category.' }))
         return
       }
       const drafts = this.draftsByPlayer.get(session.playerId!) ?? {}
-      const next = { ...drafts, [parsed.categoryId]: url.slice(0, 400) }
+      const next = { ...drafts, [parsed.categoryId]: url.slice(0, maxUrlLength) }
       this.draftsByPlayer.set(session.playerId!, next)
       ws.send(toServerMessage({ type: 'drafts', drafts: next }))
       this.persistState()
     }
 
     if (parsed.type === 'submit_submission') {
+      if (session.role !== 'player') return
       if (this.phase !== 'hunt') {
         ws.send(toServerMessage({ type: 'error', message: 'Submissions are closed.' }))
         return
@@ -806,12 +952,21 @@ export class RoomsDO implements DurableObject {
         })
       }
       this.readyByPlayer.set(session.playerId, false)
+      this.doneByPlayer.set(session.playerId, false)
     }
     this.sessions.delete(ws)
     if (session?.playerId === this.hostId) {
       this.hostId = this.pickNewHost()
     }
-    this.broadcast({ type: 'presence', players: this.getPlayers() })
+    this.broadcastRoomState()
+    if (this.phase === 'hunt' && this.allRequiredDone()) {
+      this.endHuntEarly()
+      return
+    }
+    if (this.phase === 'rounds' && this.allConnectedPlayersVoted()) {
+      this.finishRound()
+      return
+    }
     this.persistState()
   }
 
@@ -833,12 +988,21 @@ export class RoomsDO implements DurableObject {
         })
       }
       this.readyByPlayer.set(session.playerId, false)
+      this.doneByPlayer.set(session.playerId, false)
     }
     this.sessions.delete(ws)
     if (session?.playerId === this.hostId) {
       this.hostId = this.pickNewHost()
     }
-    this.broadcast({ type: 'presence', players: this.getPlayers() })
+    this.broadcastRoomState()
+    if (this.phase === 'hunt' && this.allRequiredDone()) {
+      this.endHuntEarly()
+      return
+    }
+    if (this.phase === 'rounds' && this.allConnectedPlayersVoted()) {
+      this.finishRound()
+      return
+    }
     this.persistState()
   }
 
@@ -847,6 +1011,23 @@ export class RoomsDO implements DurableObject {
     for (const socket of this.sessions.keys()) {
       socket.send(payload)
     }
+  }
+
+  broadcastRoomState() {
+    this.broadcast({
+      type: 'room_state',
+      phase: this.phase,
+      players: this.getPlayers(),
+      chat: this.chat,
+      settings: this.settings,
+      timer: this.timer,
+      categories: this.categories,
+      scoreboard: this.getScoreboard(),
+      history: this.history,
+      reportCount: this.reports.length,
+      inviteCode: this.inviteCode ?? undefined,
+      audienceCode: this.audienceCode ?? undefined
+    })
   }
 
   getPlayers(): Player[] {
@@ -859,10 +1040,102 @@ export class RoomsDO implements DurableObject {
         isHost: record.id === this.hostId,
         isConnected: record.isConnected,
         isReady: record.id === this.hostId ? true : this.readyByPlayer.get(record.id) ?? false,
+        isDone: this.doneByPlayer.get(record.id) ?? false,
         lastSeenAt: record.lastSeenAt
       })
     }
     return players.sort((a, b) => a.joinedAt - b.joinedAt)
+  }
+
+  allRequiredDone() {
+    if (this.requiredDoneIds.size === 0) return false
+    const hostRecord = this.hostId ? this.players.get(this.hostId) : null
+    if (!hostRecord?.isConnected) return false
+    for (const id of this.requiredDoneIds.values()) {
+      const record = this.players.get(id)
+      if (!record?.isConnected) continue
+      if (!this.doneByPlayer.get(id)) {
+        return false
+      }
+    }
+    return true
+  }
+
+  allConnectedPlayersVoted() {
+    if (!this.round) return false
+    const connected = Array.from(this.players.values()).filter((player) => player.isConnected)
+    if (connected.length === 0) return false
+    return connected.every((player) => this.votesByPlayer.has(player.id))
+  }
+
+  kickPlayer(playerId: string) {
+    const record = this.players.get(playerId)
+    if (!record) return
+    this.players.delete(playerId)
+    this.readyByPlayer.delete(playerId)
+    this.doneByPlayer.delete(playerId)
+    this.requiredDoneIds.delete(playerId)
+    this.votesByPlayer.delete(playerId)
+    this.playerAccounts.delete(playerId)
+    this.scoreboard.delete(playerId)
+
+    for (const [categoryId, submissions] of this.submissions.entries()) {
+      submissions.delete(playerId)
+      if (submissions.size === 0) {
+        this.submissions.delete(categoryId)
+      }
+    }
+
+    const drafts = this.draftsByPlayer.get(playerId)
+    if (drafts) {
+      this.draftsByPlayer.delete(playerId)
+    }
+
+    if (this.round) {
+      this.round.entries = this.round.entries.filter((entry) => entry.id !== playerId)
+      if (this.round.votesByEntryId[playerId]) {
+        delete this.round.votesByEntryId[playerId]
+      }
+    }
+
+    if (this.tiebreak) {
+      this.tiebreak.entryIds = this.tiebreak.entryIds.filter((id) => id !== playerId)
+      delete this.tiebreak.choicesByEntryId[playerId]
+      if (this.tiebreak.entryIds.length === 1) {
+        const winnerId = this.tiebreak.entryIds[0]
+        this.tiebreak.winnerEntryId = winnerId
+        this.broadcast({ type: 'tiebreak_result', tiebreak: this.tiebreak })
+        this.concludeRoundWithWinner(winnerId)
+      }
+    }
+
+    const tokensToRemove = Array.from(this.tokenToPlayerId.entries())
+      .filter(([, value]) => value === playerId)
+      .map(([token]) => token)
+    for (const token of tokensToRemove) {
+      this.tokenToPlayerId.delete(token)
+      const socket = this.tokenToSocket.get(token)
+      if (socket) {
+        socket.close(1000, 'Kicked')
+        this.tokenToSocket.delete(token)
+        this.sessions.delete(socket)
+      }
+    }
+
+    if (this.hostId === playerId) {
+      this.hostId = this.pickNewHost()
+    }
+  }
+
+  endHuntEarly() {
+    if (this.phase !== 'hunt') return
+    this.phase = 'intermission'
+    this.timer.intermissionRemainingSeconds = 30
+    this.timer.huntRemainingSeconds = null
+    this.timer.lastTickAt = Date.now()
+    this.broadcast({ type: 'timer', phase: this.phase, timer: this.timer })
+    this.persistState()
+    this.ensureAlarm()
   }
 
   allPlayersReady() {
@@ -976,6 +1249,7 @@ export class RoomsDO implements DurableObject {
       remainingSeconds: entries.length > 0 ? 20 : 3
     }
     this.votesByPlayer.clear()
+    this.votesByAudience.clear()
     this.tiebreak = null
     this.broadcast({ type: 'round_start', round: this.round })
     this.persistState()
@@ -1016,6 +1290,9 @@ export class RoomsDO implements DurableObject {
   tallyVotes(): Record<string, number> {
     const tally: Record<string, number> = {}
     for (const entry of this.votesByPlayer.values()) {
+      tally[entry] = (tally[entry] ?? 0) + 1
+    }
+    for (const entry of this.votesByAudience.values()) {
       tally[entry] = (tally[entry] ?? 0) + 1
     }
     return tally
@@ -1123,6 +1400,7 @@ export class RoomsDO implements DurableObject {
       submissions[categoryId] = Array.from(items.values())
     }
     const votesByPlayer = Object.fromEntries(this.votesByPlayer.entries())
+    const votesByAudience = Object.fromEntries(this.votesByAudience.entries())
     const payload: PersistedState = {
       phase: this.phase,
       settings: this.settings,
@@ -1130,6 +1408,8 @@ export class RoomsDO implements DurableObject {
       chat: this.chat,
       players: Array.from(this.players.values()),
       readyByPlayer: Object.fromEntries(this.readyByPlayer.entries()),
+      doneByPlayer: Object.fromEntries(this.doneByPlayer.entries()),
+      requiredDoneIds: Array.from(this.requiredDoneIds.values()),
       categories: this.categories,
       draftsByPlayer: Object.fromEntries(this.draftsByPlayer.entries()),
       submissions,
@@ -1137,6 +1417,7 @@ export class RoomsDO implements DurableObject {
       round: this.round,
       tiebreak: this.tiebreak,
       votesByPlayer,
+      votesByAudience,
       scoreboard: this.getScoreboard(),
       history: this.history,
       hostId: this.hostId ?? undefined,
@@ -1145,7 +1426,8 @@ export class RoomsDO implements DurableObject {
       playerAccounts: Object.fromEntries(this.playerAccounts.entries()),
       resultsRecorded: this.resultsRecorded,
       inviteCode: this.inviteCode ?? undefined,
-      isClosed: this.isClosed
+      isClosed: this.isClosed,
+      audienceCode: this.audienceCode ?? undefined
     }
     await this.state.storage.put('room_state', payload)
   }
@@ -1155,6 +1437,10 @@ export class RoomsDO implements DurableObject {
     for (const key of this.readyByPlayer.keys()) {
       this.readyByPlayer.set(key, false)
     }
+    for (const key of this.doneByPlayer.keys()) {
+      this.doneByPlayer.set(key, false)
+    }
+    this.requiredDoneIds.clear()
     this.timer = {
       targetMinutes: this.settings.defaultTime,
       huntRemainingSeconds: null,
@@ -1168,6 +1454,7 @@ export class RoomsDO implements DurableObject {
     this.round = null
     this.tiebreak = null
     this.votesByPlayer.clear()
+    this.votesByAudience.clear()
     this.scoreboard.clear()
     this.history = []
     this.resultsRecorded = false

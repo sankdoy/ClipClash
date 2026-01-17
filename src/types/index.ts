@@ -12,6 +12,7 @@ export interface Player {
   isHost: boolean
   isConnected: boolean
   isReady?: boolean
+  isDone?: boolean
   lastSeenAt?: number
 }
 
@@ -119,14 +120,17 @@ export interface TimerState {
 }
 
 export type ClientMessage =
-  | { type: 'hello'; sessionToken?: string }
+  | { type: 'hello'; sessionToken?: string; inviteCode?: string; audienceCode?: string; role?: 'player' | 'audience' }
   | { type: 'chat'; message: string }
   | { type: 'set_ready'; ready: boolean }
+  | { type: 'set_done'; done: boolean }
   | { type: 'set_timer'; minutes: number }
   | { type: 'start_hunt' }
   | { type: 'reset_match' }
   | { type: 'close_room' }
   | { type: 'rotate_invite' }
+  | { type: 'assign_host'; playerId: string }
+  | { type: 'kick_player'; playerId: string }
   | { type: 'update_categories'; categories: Category[] }
   | { type: 'update_name'; name: string }
   | { type: 'save_draft'; categoryId: string; url: string }
@@ -137,7 +141,8 @@ export type ClientMessage =
   | { type: 'set_audience_mode'; enabled: boolean }
 
 export type ServerMessage =
-  | { type: 'welcome'; sessionToken: string; playerId: string; roomId: string; phase: Phase; players: Player[]; chat: ChatMessage[]; settings: Settings; timer: TimerState; categories: Category[]; scoreboard: ScoreboardEntry[]; history: RoundHistoryEntry[]; drafts: DraftsByCategory; reportCount: number; inviteCode?: string }
+  | { type: 'welcome'; sessionToken: string; playerId: string; roomId: string; phase: Phase; players: Player[]; chat: ChatMessage[]; settings: Settings; timer: TimerState; categories: Category[]; scoreboard: ScoreboardEntry[]; history: RoundHistoryEntry[]; drafts: DraftsByCategory; reportCount: number; inviteCode?: string; audienceCode?: string }
+  | { type: 'room_state'; phase: Phase; players: Player[]; chat: ChatMessage[]; settings: Settings; timer: TimerState; categories: Category[]; scoreboard: ScoreboardEntry[]; history: RoundHistoryEntry[]; reportCount: number; inviteCode?: string; audienceCode?: string }
   | { type: 'presence'; players: Player[] }
   | { type: 'chat'; chat: ChatMessage }
   | { type: 'invite_code'; code: string }
