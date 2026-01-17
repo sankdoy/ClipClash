@@ -6,6 +6,7 @@ import Room from './features/room/Room'
 import Account from './features/account/Account'
 import Leaderboard from './features/leaderboard/Leaderboard'
 import Donations from './features/donations/Donations'
+import Sponsor from './features/sponsor/Sponsor'
 
 function Header() {
   const location = useLocation()
@@ -48,6 +49,7 @@ export default function App() {
             <Route path="/donate" element={<Donations />} />
             <Route path="/account" element={<Account />} />
             <Route path="/about" element={<About />} />
+            <Route path="/sponsor" element={<Sponsor />} />
           </Routes>
         </main>
       </div>
