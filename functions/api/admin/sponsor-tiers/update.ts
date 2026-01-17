@@ -6,7 +6,10 @@ type UpdatePayload = {
   last_updated_iso: string
 }
 
-export async function onRequestPost({ env, request }: { env: Env & { ADMIN_TOKEN?: string }; request: Request }) {
+export async function onRequest({ env, request }: { env: Env & { ADMIN_TOKEN?: string }; request: Request }) {
+  if (request.method !== 'POST') {
+    return new Response('Method Not Allowed', { status: 405 })
+  }
   const auth = request.headers.get('Authorization')
   if (!auth || auth !== `Bearer ${env.ADMIN_TOKEN}`) {
     return new Response('Unauthorized', { status: 401 })

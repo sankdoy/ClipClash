@@ -1,4 +1,4 @@
-import type { Env } from './api/_helpers'
+import type { Env } from '../_helpers'
 
 type TierRow = {
   tier_key: string
@@ -25,7 +25,10 @@ function escapeHtml(value: string) {
     .replace(/'/g, '&#39;')
 }
 
-export async function onRequestGet({ env }: { env: Env }) {
+export async function onRequest({ env, request }: { env: Env; request: Request }) {
+  if (request.method !== 'GET') {
+    return new Response('Method Not Allowed', { status: 405 })
+  }
   const results = await env.DB.prepare('SELECT * FROM sponsor_tiers ORDER BY max_rank ASC').all()
   const tiers = (results.results ?? []) as TierRow[]
 

@@ -1,10 +1,13 @@
-import type { Env } from '../api/_helpers'
+import type { Env } from '../_helpers'
 
 function validateUrl(value: string) {
   return value.startsWith('https://')
 }
 
-export async function onRequestPost({ env, request }: { env: Env; request: Request }) {
+export async function onRequest({ env, request }: { env: Env; request: Request }) {
+  if (request.method !== 'POST') {
+    return new Response('Method Not Allowed', { status: 405 })
+  }
   const formData = await request.formData()
   const brandName = String(formData.get('brand_name') ?? '').trim()
   const contactEmail = String(formData.get('contact_email') ?? '').trim()
