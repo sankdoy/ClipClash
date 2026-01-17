@@ -118,6 +118,8 @@ export default function Room() {
   const [scoreboard, setScoreboard] = useState<ScoreboardEntry[]>([])
   const [history, setHistory] = useState<RoundHistoryEntry[]>([])
   const [sponsorSlot, setSponsorSlot] = useState<SponsorSlot | null>(null)
+  const [showSponsorOverlay, setShowSponsorOverlay] = useState(false)
+  const [sponsorOverlaySeen, setSponsorOverlaySeen] = useState(false)
   const [displayName, setDisplayName] = useState('')
   const [accountUsername, setAccountUsername] = useState<string | null>(null)
   const [playerId, setPlayerId] = useState<string | null>(null)
@@ -412,6 +414,19 @@ export default function Room() {
       }
     }
   }, [phase, settings?.defaultTime])
+
+  useEffect(() => {
+    if (phase === 'lobby') {
+      setSponsorOverlaySeen(false)
+      setShowSponsorOverlay(false)
+      return
+    }
+    if (phase !== 'hunt' || sponsorOverlaySeen || !sponsorSlot) return
+    setShowSponsorOverlay(true)
+    setSponsorOverlaySeen(true)
+    const timeout = window.setTimeout(() => setShowSponsorOverlay(false), 3500)
+    return () => window.clearTimeout(timeout)
+  }, [phase, sponsorOverlaySeen, sponsorSlot])
 
   const currentPlayer = players.find((player) => player.id === playerId) ?? null
   const isHost = currentPlayer?.isHost ?? false
@@ -1423,6 +1438,21 @@ export default function Room() {
           )}
         </div>
       </div>
+
+      {showSponsorOverlay && sponsorSlot && (
+        <div className="sponsor-overlay" role="presentation">
+          <div className="sponsor-stinger">
+            <p className="eyebrow">Sponsored by</p>
+            {sponsorSlot.imageUrl ? (
+              <img src={sponsorSlot.imageUrl} alt={sponsorSlot.sponsorName || 'Sponsor'} />
+            ) : (
+              <div className="sponsor-placeholder" />
+            )}
+            <h3>{sponsorSlot.sponsorName || 'Sponsor'}</h3>
+            <p className="muted">{sponsorSlot.tagline}</p>
+          </div>
+        </div>
+      )}
 
       {inviteOpen && (
         <div className="modal-scrim" role="dialog" aria-modal="true">
