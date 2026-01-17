@@ -546,6 +546,9 @@
 		background:var(--card-2);
 		color:var(--text);
 	}
+	.chat-form .btn{
+		flex:0 0 auto;
+	}
 	.help-graphic{
 		height:120px;
 		border-radius:14px;

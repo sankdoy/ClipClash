@@ -11,11 +11,15 @@ export default function Home() {
   const [roomCode, setRoomCode] = useState('')
   const [publicRooms, setPublicRooms] = useState<Array<{ id: string; name: string; players: number; capacity: number }>>([])
   const [roomsStatus, setRoomsStatus] = useState<'loading' | 'ok' | 'error'>('loading')
+  const [roomVisibility, setRoomVisibility] = useState<'public' | 'private'>('public')
   const navigate = useNavigate()
 
   const startRoom = () => {
     const newRoomId = makeRoomId()
     setRoomCode(newRoomId)
+    if (roomVisibility === 'public') {
+      saveLocalPublicRoom(newRoomId)
+    }
     navigate(`/room/${newRoomId}`)
   }
 
@@ -34,7 +38,8 @@ export default function Home() {
       .then((data) => {
         if (!mounted) return
         if (data?.rooms) {
-          setPublicRooms(data.rooms)
+          const localRooms = loadLocalPublicRooms()
+          setPublicRooms([...localRooms, ...data.rooms])
           setRoomsStatus('ok')
         } else {
           setRoomsStatus('error')
@@ -50,12 +55,39 @@ export default function Home() {
         <div className="home-main">
           <div className="mode-card">
             <p className="eyebrow">Play</p>
-            <h2>Start a room or join with a code.</h2>
-            <p className="muted">2–10 players. One shared timer. Vote in secret.</p>
+            <h2>Start a room.</h2>
+            <p className="muted">2–10 players. One shared timer. Invite friends with the code in the room.</p>
             <div className="mode-actions">
               <button className="btn primary" onClick={startRoom}>
                 Start a room
               </button>
+            </div>
+            <div className="segment-tabs">
+              <button
+                className={`segment ${roomVisibility === 'public' ? 'active' : ''}`}
+                onClick={() => setRoomVisibility('public')}
+              >
+                Public room
+              </button>
+              <button
+                className={`segment ${roomVisibility === 'private' ? 'active' : ''}`}
+                onClick={() => setRoomVisibility('private')}
+              >
+                Private room
+              </button>
+            </div>
+            <p className="muted">
+              {roomVisibility === 'public'
+                ? 'Public rooms appear in the lobby list on this device.'
+                : 'Private rooms are joinable only with a code.'}
+            </p>
+          </div>
+
+          <div className="mode-card">
+            <p className="eyebrow">Join</p>
+            <h2>Join with a code.</h2>
+            <p className="muted">Use the room code your host shared.</p>
+            <div className="mode-actions">
               <button
                 className="btn ghost"
                 onClick={() => roomCode && navigate(`/room/${roomCode.trim()}`)}
@@ -118,4 +150,34 @@ export default function Home() {
       </section>
     </div>
   )
+}
+
+function loadLocalPublicRooms() {
+  try {
+    const raw = window.localStorage.getItem('cc_public_rooms')
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as Array<{ id: string; name: string; createdAt: number }>
+    return parsed.map((room) => ({
+      id: room.id,
+      name: room.name,
+      players: 0,
+      capacity: 10
+    }))
+  } catch {
+    return []
+  }
+}
+
+function saveLocalPublicRoom(roomId: string) {
+  try {
+    const raw = window.localStorage.getItem('cc_public_rooms')
+    const existing = raw ? (JSON.parse(raw) as Array<{ id: string; name: string; createdAt: number }>) : []
+    const next = [
+      { id: roomId, name: `Room ${roomId}`, createdAt: Date.now() },
+      ...existing.filter((room) => room.id !== roomId)
+    ].slice(0, 12)
+    window.localStorage.setItem('cc_public_rooms', JSON.stringify(next))
+  } catch {
+    return
+  }
 }

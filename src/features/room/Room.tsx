@@ -297,6 +297,7 @@ export default function Room() {
   }, [roomId, displayName, isTestPlayer])
 
   const isHost = players.find((player) => player.id === playerId)?.isHost ?? false
+  const nameLocked = Boolean(accountUsername)
 
   useEffect(() => {
     if (!roomId || loadedSavedDrafts || !isHost || phase !== 'lobby') return
@@ -345,6 +346,10 @@ export default function Room() {
   }, [])
 
   const sendHello = () => {
+    if (nameLocked) {
+      setActionNotice('Name is locked to your account profile.')
+      return
+    }
     const ws = socketRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return
     ws.send(JSON.stringify({ type: 'update_name', name: displayName }))
@@ -635,9 +640,11 @@ export default function Room() {
                 placeholder="Pick a name"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
+                disabled={nameLocked}
               />
             </label>
-            <button className="btn outline" onClick={sendHello} disabled={!displayName.trim()}>
+            {nameLocked && <p className="muted">Using your account name. Update it in Account settings.</p>}
+            <button className="btn outline" onClick={sendHello} disabled={!displayName.trim() || nameLocked}>
               Update name
             </button>
           </div>
