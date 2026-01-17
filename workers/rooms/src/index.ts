@@ -1604,9 +1604,9 @@ export class RoomsDO implements DurableObject {
 function buildDefaultSponsorSlot(): SponsorSlot {
   return {
     status: 'empty',
-    sponsorName: '',
+    sponsorName: 'me myself and i',
     imageUrl: '',
-    clickUrl: '',
-    tagline: ''
+    clickUrl: '/sponsor',
+    tagline: 'Sponsored by me myself and i, im awesome :)'
   }
 }
