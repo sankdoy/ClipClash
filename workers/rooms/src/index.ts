@@ -525,7 +525,7 @@ export class RoomsDO implements DurableObject {
   }
 
   isHost(session: Session) {
-    return session.role === 'player' && session.playerId !== null && session.hostKeyVerified && this.hostId === session.playerId
+    return session.role === 'player' && session.playerId !== null && this.hostId === session.playerId
   }
 
   async webSocketMessage(ws: WebSocket, message: string) {
@@ -1584,7 +1584,10 @@ export class RoomsDO implements DurableObject {
   }
 
   pickNewHost() {
-    return null
+    const connected = Array.from(this.players.values()).filter((player) => player.isConnected)
+    if (connected.length === 0) return null
+    connected.sort((a, b) => a.joinedAt - b.joinedAt)
+    return connected[0].id
   }
 
   updateScoreboard(winnerId: string, categoryId: string, categoryName: string) {

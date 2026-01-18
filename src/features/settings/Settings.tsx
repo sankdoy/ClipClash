@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from 'react'
+import React, { useContext, useEffect, useRef, useState } from 'react'
 import { ThemeContext } from '../../ThemeProvider'
 import { themePacks } from '../../theme'
 import { getMe } from '../../utils/auth'
@@ -28,6 +28,7 @@ export default function Settings() {
   const [previousMode, setPreviousMode] = useState<string | null>(null)
   const [previousCss, setPreviousCss] = useState<string | null>(null)
   const [bgDragOver, setBgDragOver] = useState(false)
+  const bgInputRef = useRef<HTMLInputElement | null>(null)
   const baseTemplate = `:root {
   --bg: #0f1116;
   --bg-end: #0b0d12;
@@ -134,6 +135,9 @@ export default function Settings() {
       const result = typeof reader.result === 'string' ? reader.result : ''
       setBackgroundImage(result)
       setStatus('Background loaded.')
+      if (bgInputRef.current) {
+        bgInputRef.current.value = ''
+      }
     }
     reader.readAsDataURL(file)
   }
@@ -190,9 +194,18 @@ export default function Settings() {
           <input
             type="file"
             accept="image/*"
+            ref={bgInputRef}
+            onClick={() => {
+              if (bgInputRef.current) {
+                bgInputRef.current.value = ''
+              }
+            }}
             onChange={(event) => {
               const file = event.target.files?.[0]
               if (file) readBackgroundFile(file)
+              if (bgInputRef.current) {
+                bgInputRef.current.value = ''
+              }
             }}
           />
           <p className="muted">Drag an image here or click to choose a file.</p>
@@ -200,7 +213,15 @@ export default function Settings() {
         {backgroundImage && (
           <div className="bg-preview">
             <div className="bg-preview-image" style={{ backgroundImage: `url("${backgroundImage}")` }} />
-            <button className="btn ghost" onClick={() => setBackgroundImage('')}>
+            <button
+              className="btn ghost"
+              onClick={() => {
+                setBackgroundImage('')
+                if (bgInputRef.current) {
+                  bgInputRef.current.value = ''
+                }
+              }}
+            >
               Clear background
             </button>
           </div>
