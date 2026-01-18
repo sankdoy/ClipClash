@@ -14,13 +14,13 @@ export async function verifyLogin(email: string, code: string) {
     body: JSON.stringify({ email, code })
   })
   if (!res.ok) return null
-  return await res.json()
+  return (await res.json()) as { user?: { id: string; email: string; username: string; avatar_url?: string } }
 }
 
-export async function getMe() {
+export async function getMe(): Promise<{ user?: { id: string; email: string; username: string; avatar_url?: string } } | null> {
   const res = await fetch('/api/auth/me')
   if (!res.ok) return null
-  return await res.json()
+  return (await res.json()) as { user?: { id: string; email: string; username: string; avatar_url?: string } }
 }
 
 export async function updateProfile(username: string, avatarUrl?: string) {

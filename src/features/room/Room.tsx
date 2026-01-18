@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { getMe } from '../../utils/auth'
 import type {
@@ -633,7 +633,7 @@ export default function Room() {
   const fetchEntitlements = async () => {
     const res = await fetch('/api/entitlements')
     if (!res.ok) return
-    const data = await res.json()
+    const data = (await res.json()) as { hasAudienceMode?: boolean }
     setHasAudienceMode(Boolean(data?.hasAudienceMode))
   }
 
@@ -647,7 +647,7 @@ export default function Room() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ roomId })
       })
-      const data = await res.json()
+      const data = (await res.json()) as { url?: string; error?: string }
       if (!res.ok || !data?.url) {
         setAudienceStatus(data?.error ?? 'Unable to start checkout.')
         return
@@ -743,10 +743,6 @@ export default function Room() {
   const inviteUrl = roomId
     ? `${window.location.origin}/room/${roomId}?code=${encodeURIComponent(inviteCode ?? roomId)}`
     : ''
-  const audienceUrl =
-    roomId && audienceCode
-      ? `${window.location.origin}/room/${roomId}?audience=1&audienceCode=${encodeURIComponent(audienceCode)}`
-      : ''
   const submittedCount = Object.keys(submissionSaved).length
   const nextCategory = categories[history.length]?.name
   const timerMin = settings?.minTime ?? 3
@@ -762,23 +758,6 @@ export default function Room() {
       setTimerDraft(timer.targetMinutes)
     }
   }, [timer?.targetMinutes])
-
-  const submitLink = (categoryId: string) => {
-    const url = (submissionDrafts[categoryId] ?? '').trim()
-    if (!isTikTokUrl(url)) {
-      setSubmissionErrors((prev) => ({ ...prev, [categoryId]: 'Invalid TikTok link.' }))
-      return
-    }
-    const ws = socketRef.current
-    if (!ws || ws.readyState !== WebSocket.OPEN) return
-    ws.send(JSON.stringify({ type: 'submit_submission', categoryId, url }))
-  }
-
-  const saveDraft = (categoryId: string, url: string) => {
-    const ws = socketRef.current
-    if (!ws || ws.readyState !== WebSocket.OPEN) return
-    ws.send(JSON.stringify({ type: 'save_draft', categoryId, url }))
-  }
 
   const queueSubmission = (categoryId: string, url: string, immediate = false) => {
     const timers = submitTimersRef.current
