@@ -499,14 +499,14 @@ export class RoomsDO implements DurableObject {
         return
       }
 
-      const requestedRole = parsed.role ?? 'player'
-      if (requestedRole === 'audience') {
+      const audienceCode = parsed.audienceCode?.trim()
+      if (audienceCode) {
         if (!this.settings.audienceModeEnabled) {
           ws.send(toServerMessage({ type: 'error', message: 'Audience Mode not enabled.' }))
           ws.close(1000, 'Audience disabled')
           return
         }
-        if (!this.audienceCode || parsed.audienceCode?.trim() !== this.audienceCode) {
+        if (!this.audienceCode || audienceCode !== this.audienceCode) {
           ws.send(toServerMessage({ type: 'error', message: 'Invalid audience code.' }))
           ws.close(1000, 'Invalid audience code')
           return

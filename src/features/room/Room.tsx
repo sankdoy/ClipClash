@@ -180,7 +180,6 @@ export default function Room() {
           sessionToken: storedToken ?? undefined,
           inviteCode: inviteFromUrl ?? undefined,
           hostKey: hostKeyFromUrl ?? undefined,
-          role: isAudienceView ? 'audience' : 'player',
           audienceCode: audienceFromUrl ?? undefined
         })
       )
