@@ -279,127 +279,47 @@ body{
 		inset:0;
 		z-index:1;
 		pointer-events:none;
-		--glass-blur: 26px;
-		--glass-sat: 190%;
-		--glass-contrast: 125%;
-		--glass-bright: 112%;
-		--glass-opacity: 0.95;
-		--orb-alpha: 0.85;
-		--rim-alpha: 0.35;
-		--wave-speed: 14s;
-		--caustic-speed: 9s;
+		--rain-speed: 12s;
+		--rain-opacity: 0.22;
+		--rain-blur: 0.8px;
 	}
 	.scene__glass::before{
 		content:"";
 		position:absolute;
-		inset:-12%;
-		opacity:var(--glass-opacity);
-		-webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) contrast(var(--glass-contrast)) brightness(var(--glass-bright));
-		backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) contrast(var(--glass-contrast)) brightness(var(--glass-bright));
-		background-repeat:no-repeat;
-		background-image:
-			radial-gradient(circle at 32% 28%, rgba(255,255,255, calc(var(--orb-alpha) * .55)), rgba(255,255,255,0) 58%),
-			radial-gradient(circle at 50% 50%, rgba(255,255,255,0) 56%, rgba(255,255,255, calc(var(--rim-alpha) * .75)) 62%, rgba(255,255,255,0) 72%),
-			radial-gradient(circle at 30% 30%, rgba(170,235,255, calc(var(--orb-alpha) * .35)), rgba(255,255,255,0) 60%),
-			radial-gradient(circle at 50% 50%, rgba(255,255,255,0) 55%, rgba(210,245,255, calc(var(--rim-alpha) * .55)) 63%, rgba(255,255,255,0) 74%),
-			radial-gradient(circle at 34% 26%, rgba(255,190,245, calc(var(--orb-alpha) * .26)), rgba(255,255,255,0) 60%),
-			radial-gradient(circle at 50% 50%, rgba(255,255,255,0) 56%, rgba(255,215,250, calc(var(--rim-alpha) * .50)) 63%, rgba(255,255,255,0) 74%),
-			radial-gradient(circle at 33% 29%, rgba(210,255,220, calc(var(--orb-alpha) * .22)), rgba(255,255,255,0) 60%),
-			radial-gradient(circle at 50% 50%, rgba(255,255,255,0) 56%, rgba(220,255,235, calc(var(--rim-alpha) * .45)) 64%, rgba(255,255,255,0) 74%),
-			radial-gradient(circle at 32% 28%, rgba(255,255,255, calc(var(--orb-alpha) * .30)), rgba(255,255,255,0) 58%),
-			radial-gradient(circle at 50% 50%, rgba(255,255,255,0) 56%, rgba(255,255,255, calc(var(--rim-alpha) * .55)) 62%, rgba(255,255,255,0) 72%);
-		background-size:
-			28vmax 28vmax, 28vmax 28vmax,
-			22vmax 22vmax, 22vmax 22vmax,
-			18vmax 18vmax, 18vmax 18vmax,
-			20vmax 20vmax, 20vmax 20vmax,
-			14vmax 14vmax, 14vmax 14vmax;
-		background-position:
-			10% 60%, 10% 60%,
-			38% 18%, 38% 18%,
-			72% 42%, 72% 42%,
-			56% 82%, 56% 82%,
-			86% 72%, 86% 72%;
-		-webkit-mask-repeat:no-repeat;
-		-webkit-mask-image:
-			radial-gradient(circle, rgba(0,0,0,1) 0 60%, rgba(0,0,0,0) 72%),
-			radial-gradient(circle, rgba(0,0,0,1) 0 60%, rgba(0,0,0,0) 72%),
-			radial-gradient(circle, rgba(0,0,0,1) 0 60%, rgba(0,0,0,0) 72%),
-			radial-gradient(circle, rgba(0,0,0,1) 0 60%, rgba(0,0,0,0) 72%),
-			radial-gradient(circle, rgba(0,0,0,1) 0 60%, rgba(0,0,0,0) 72%);
-		-webkit-mask-size: 28vmax 28vmax, 22vmax 22vmax, 18vmax 18vmax, 20vmax 20vmax, 14vmax 14vmax;
-		-webkit-mask-position: 10% 60%, 38% 18%, 72% 42%, 56% 82%, 86% 72%;
+		inset:-40%;
+		background:
+			repeating-linear-gradient(
+				120deg,
+				rgba(255,255,255,0.08) 0 1px,
+				rgba(255,255,255,0) 1px 14px
+			);
+		opacity:var(--rain-opacity);
+		filter: blur(var(--rain-blur));
 		mix-blend-mode:soft-light;
-		filter:hue-rotate(6deg);
-		animation:orb-waves var(--wave-speed) ease-in-out infinite;
+		animation:rain-fall var(--rain-speed) linear infinite;
 	}
 	.scene__glass::after{
 		content:"";
 		position:absolute;
-		inset:-20%;
-		opacity:0.28;
-		mix-blend-mode:overlay;
-		pointer-events:none;
+		inset:0;
 		background:
-			repeating-linear-gradient(
-				115deg,
-				rgba(255,255,255,0) 0 18px,
-				rgba(255,255,255,0.08) 18px 22px,
-				rgba(255,255,255,0) 22px 44px
-			),
-			radial-gradient(circle at 30% 40%, rgba(255,255,255,0.14), rgba(255,255,255,0) 60%),
-			radial-gradient(circle at 70% 60%, rgba(255,255,255,0.10), rgba(255,255,255,0) 58%);
-		-webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.25));
-		backdrop-filter: blur(calc(var(--glass-blur) * 0.25));
-		animation:caustics var(--caustic-speed) linear infinite;
+			radial-gradient(circle, rgba(255,255,255,0.08) 1px, rgba(255,255,255,0) 2px);
+		background-size: 120px 120px;
+		opacity:0.14;
+		mix-blend-mode:overlay;
+		animation:rain-drift calc(var(--rain-speed) * 1.3) ease-in-out infinite;
 	}
 	[data-bg-anim="off"] .scene__glass{
 		display:none;
 	}
-	@keyframes orb-waves{
-		0%{
-			transform:translate3d(0,0,0) rotate(0.001deg);
-			background-position:
-				10% 60%, 10% 60%,
-				38% 18%, 38% 18%,
-				72% 42%, 72% 42%,
-				56% 82%, 56% 82%,
-				86% 72%, 86% 72%;
-			-webkit-mask-position: 10% 60%, 38% 18%, 72% 42%, 56% 82%, 86% 72%;
-			filter:hue-rotate(6deg);
-		}
-		50%{
-			transform:translate3d(1.8%, -1.2%, 0) rotate(0.001deg);
-			background-position:
-				18% 50%, 18% 50%,
-				46% 26%, 46% 26%,
-				64% 54%, 64% 54%,
-				48% 76%, 48% 76%,
-				78% 66%, 78% 66%;
-			-webkit-mask-position: 18% 50%, 46% 26%, 64% 54%, 48% 76%, 78% 66%;
-			filter:hue-rotate(18deg);
-		}
-		100%{
-			transform:translate3d(0,0,0) rotate(0.001deg);
-			background-position:
-				10% 60%, 10% 60%,
-				38% 18%, 38% 18%,
-				72% 42%, 72% 42%,
-				56% 82%, 56% 82%,
-				86% 72%, 86% 72%;
-			-webkit-mask-position: 10% 60%, 38% 18%, 72% 42%, 56% 82%, 86% 72%;
-			filter:hue-rotate(6deg);
-		}
+	@keyframes rain-fall{
+		0%{transform:translate3d(0,-10%,0)}
+		100%{transform:translate3d(0,10%,0)}
 	}
-	@keyframes caustics{
-		0%{
-			transform:translate3d(-6%, -2%, 0) rotate(-2deg);
-			background-position: 0 0, 0 0, 0 0;
-		}
-		100%{
-			transform:translate3d(6%, 2%, 0) rotate(2deg);
-			background-position: 520px 0, 180px 120px, -220px -90px;
-		}
+	@keyframes rain-drift{
+		0%{transform:translate3d(0,0,0)}
+		50%{transform:translate3d(-2%,1%,0)}
+		100%{transform:translate3d(0,0,0)}
 	}
 	@keyframes dots-drift{
 		0%{background-position:center,center,center,0 0}
@@ -641,8 +561,8 @@ body{
 		.scene__glass::after{ animation:none; }
 	}
 	@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))){
-		.scene__glass::before{ opacity: 0.35; mix-blend-mode: overlay; }
-		.scene__glass::after{ opacity: 0.18; }
+		.scene__glass::before{ opacity: 0.25; mix-blend-mode: overlay; }
+		.scene__glass::after{ opacity: 0.12; }
 	}
 	.helper{margin:0;color:var(--text-dim);font-size:0.85rem}
 	.room-list{display:flex;flex-direction:column;gap:10px}

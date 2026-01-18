@@ -33,16 +33,13 @@ export default function Settings() {
   const [previousCss, setPreviousCss] = useState<string | null>(null)
   const [bgDragOver, setBgDragOver] = useState(false)
   const defaultGlassCss = `.scene__glass{
-  --glass-blur: 18px;
-  --glass-sat: 175%;
-  --glass-contrast: 120%;
-  --glass-opacity: 0.55;
-  --glass-tint: 0.10;
-  --glass-speed: 22s;
+  --rain-speed: 12s;
+  --rain-opacity: 0.22;
+  --rain-blur: 0.8px;
 }
 
 .scene__glass::after{
-  opacity: 0.18;
+  opacity: 0.14;
 }
 `
   const baseTemplate = `:root {
