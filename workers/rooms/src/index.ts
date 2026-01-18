@@ -241,6 +241,10 @@ function generateSessionToken() {
   return base64UrlEncode(bytes)
 }
 
+function generateInviteCode() {
+  return `room-${Math.random().toString(36).slice(2, 8)}`
+}
+
 function getCookie(headers: Headers, name: string) {
   const raw = headers.get('Cookie') ?? ''
   const parts = raw.split(';').map((part) => part.trim())
@@ -535,9 +539,9 @@ export class RoomsDO implements DurableObject {
       const sessionToken = resolved.sessionToken
 
       if (!this.inviteCode) {
-        this.inviteCode = parsed.inviteCode?.trim() ?? null
+        this.inviteCode = generateInviteCode()
       }
-      if (this.inviteCode && parsed.inviteCode?.trim() !== this.inviteCode) {
+      if (resolved.isNew && this.inviteCode && parsed.inviteCode?.trim() !== this.inviteCode && this.players.size > 0) {
         ws.send(toServerMessage({ type: 'error', message: 'Invalid room code.' }))
         ws.close(1000, 'Invalid room code')
         return
@@ -786,7 +790,7 @@ export class RoomsDO implements DurableObject {
 
     if (parsed.type === 'rotate_invite') {
       if (this.hostId !== session.playerId) return
-      this.inviteCode = `room-${Math.random().toString(36).slice(2, 8)}`
+      this.inviteCode = generateInviteCode()
       this.broadcast({ type: 'invite_code', code: this.inviteCode })
       this.persistState()
       return
