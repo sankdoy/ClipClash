@@ -326,6 +326,43 @@
 		color:var(--disabled-text);
 		border-color:var(--disabled-border);
 	}
+	.upload-drop{
+		position:relative;
+		border:1px dashed var(--border);
+		border-radius:12px;
+		padding:16px;
+		background:var(--card-2);
+		display:flex;
+		align-items:center;
+		justify-content:center;
+		text-align:center;
+		min-height:120px;
+		cursor:pointer;
+	}
+	.upload-drop input{
+		position:absolute;
+		inset:0;
+		opacity:0;
+		cursor:pointer;
+	}
+	.upload-drop.active{
+		border-color:var(--accent);
+		box-shadow:0 0 0 3px var(--focus-ring);
+	}
+	.avatar-preview{
+		display:flex;
+		align-items:center;
+		gap:12px;
+		margin-top:10px;
+	}
+	.avatar-preview img{
+		width:72px;
+		height:72px;
+		border-radius:50%;
+		object-fit:cover;
+		border:1px solid var(--border);
+		background:var(--card-2);
+	}
 	.helper{margin:0;color:var(--text-dim);font-size:0.85rem}
 	.room-list{display:flex;flex-direction:column;gap:10px}
 	.room-chip{

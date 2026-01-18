@@ -13,7 +13,7 @@ type User = {
 export default function Settings() {
   const [status, setStatus] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
-  const { theme, mode, setTheme, setMode, customCss, setCustomCss } = useContext(ThemeContext)
+  const { theme, mode, setTheme, customCss, setCustomCss } = useContext(ThemeContext)
   const [customDraft, setCustomDraft] = useState('')
   const [previewing, setPreviewing] = useState(false)
   const [previousTheme, setPreviousTheme] = useState<string | null>(null)
@@ -113,14 +113,6 @@ export default function Settings() {
                 {pack.label}
               </option>
             ))}
-          </select>
-        </label>
-        <label className="field">
-          Mode
-          <select value={mode} onChange={(e) => setMode(e.target.value as any)}>
-            <option value="system">System</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
           </select>
         </label>
         {user && (

@@ -15,6 +15,7 @@ export default function Account() {
   const [user, setUser] = useState<User | null>(null)
   const [username, setUsername] = useState('')
   const [avatarUrl, setAvatarUrl] = useState('')
+  const [avatarDragOver, setAvatarDragOver] = useState(false)
 
   useEffect(() => {
     getMe().then((data) => {
@@ -58,6 +59,31 @@ export default function Account() {
   const saveProfile = async () => {
     const ok = await updateProfile(username, avatarUrl)
     setStatus(ok ? 'Profile updated.' : 'Profile update failed.')
+  }
+
+  const readAvatarFile = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setStatus('Please choose an image file.')
+      return
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setStatus('Image too large. Max 2MB.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : ''
+      setAvatarUrl(result)
+      setStatus('Avatar loaded. Save profile to apply.')
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const onAvatarDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setAvatarDragOver(false)
+    const file = event.dataTransfer.files?.[0]
+    if (file) readAvatarFile(file)
   }
 
   const doLogout = async () => {
@@ -112,9 +138,35 @@ export default function Account() {
               <input value={username} onChange={(e) => setUsername(e.target.value)} />
             </label>
             <label className="field">
-              Profile picture URL
-              <input value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} />
+              Profile picture
+              <div
+                className={`upload-drop ${avatarDragOver ? 'active' : ''}`}
+                onDragOver={(event) => {
+                  event.preventDefault()
+                  setAvatarDragOver(true)
+                }}
+                onDragLeave={() => setAvatarDragOver(false)}
+                onDrop={onAvatarDrop}
+              >
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0]
+                    if (file) readAvatarFile(file)
+                  }}
+                />
+                <p className="muted">Drag an image here or click to choose a file.</p>
+              </div>
             </label>
+            {avatarUrl && (
+              <div className="avatar-preview">
+                <img src={avatarUrl} alt="Avatar preview" />
+                <button className="btn ghost" onClick={() => setAvatarUrl('')}>
+                  Remove avatar
+                </button>
+              </div>
+            )}
             <div className="room-controls">
               <button className="btn primary" onClick={saveProfile}>
                 Save profile
