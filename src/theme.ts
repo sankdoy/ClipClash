@@ -6,8 +6,8 @@ export type ThemePack = {
 }
 
 export const themePacks: ThemePack[] = [
-  { id: 'clash', label: 'Clash Orange' },
   { id: 'neonTikTok', label: 'Neon TikTok' },
+  { id: 'clash', label: 'Classic' },
   { id: 'neon', label: 'Neon Mint' },
   { id: 'sunset', label: 'Sunset Coral' },
   { id: 'mono', label: 'Mono Ink' },
