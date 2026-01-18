@@ -7,6 +7,7 @@ import Account from './features/account/Account'
 import Leaderboard from './features/leaderboard/Leaderboard'
 import Donations from './features/donations/Donations'
 import Sponsor from './features/sponsor/Sponsor'
+import Settings from './features/settings/Settings'
 
 function Header() {
   const location = useLocation()
@@ -28,6 +29,9 @@ function Header() {
         <Link className="icon-btn" to="/leaderboard">
           Rank
         </Link>
+        <Link className="icon-btn" to="/settings">
+          Settings
+        </Link>
         <Link className="icon-btn" to="/account">
           Account
         </Link>
@@ -48,6 +52,7 @@ export default function App() {
             <Route path="/leaderboard" element={<Leaderboard />} />
             <Route path="/donate" element={<Donations />} />
             <Route path="/account" element={<Account />} />
+            <Route path="/settings" element={<Settings />} />
             <Route path="/about" element={<About />} />
             <Route path="/sponsor" element={<Sponsor />} />
           </Routes>
