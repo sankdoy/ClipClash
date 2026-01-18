@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { getMe, logout, requestLogin, updateProfile, verifyLogin } from '../../utils/auth'
 
 type User = {
@@ -16,6 +16,7 @@ export default function Account() {
   const [username, setUsername] = useState('')
   const [avatarUrl, setAvatarUrl] = useState('')
   const [avatarDragOver, setAvatarDragOver] = useState(false)
+  const avatarInputRef = useRef<HTMLInputElement | null>(null)
   const [hasAudienceMode, setHasAudienceMode] = useState(false)
   const [audienceLoading, setAudienceLoading] = useState(false)
   const [audienceStatus, setAudienceStatus] = useState<string | null>(null)
@@ -125,6 +126,9 @@ export default function Account() {
       const result = typeof reader.result === 'string' ? reader.result : ''
       setAvatarUrl(result)
       setStatus('Avatar loaded. Save profile to apply.')
+      if (avatarInputRef.current) {
+        avatarInputRef.current.value = ''
+      }
     }
     reader.readAsDataURL(file)
   }
@@ -201,9 +205,18 @@ export default function Account() {
                 <input
                   type="file"
                   accept="image/*"
+                  ref={avatarInputRef}
+                  onClick={() => {
+                    if (avatarInputRef.current) {
+                      avatarInputRef.current.value = ''
+                    }
+                  }}
                   onChange={(event) => {
                     const file = event.target.files?.[0]
                     if (file) readAvatarFile(file)
+                    if (avatarInputRef.current) {
+                      avatarInputRef.current.value = ''
+                    }
                   }}
                 />
                 <p className="muted">Drag an image here or click to choose a file.</p>
