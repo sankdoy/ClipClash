@@ -145,6 +145,7 @@ export default function Room() {
   const [playbackOrder, setPlaybackOrder] = useState<RoundEntry[]>([])
   const [playbackIndex, setPlaybackIndex] = useState(0)
   const [playbackPause, setPlaybackPause] = useState(false)
+  const [twitchLoginDraft, setTwitchLoginDraft] = useState('')
   const socketRef = useRef<WebSocket | null>(null)
   const timerRef = useRef<TimerState | null>(null)
   const submitTimersRef = useRef<Record<string, number>>({})
@@ -211,6 +212,7 @@ export default function Room() {
         setInviteCode(data.inviteCode ?? roomId ?? null)
         setAudienceCode(data.audienceCode ?? null)
         setSponsorSlot(data.sponsorSlot ?? null)
+        setTwitchLoginDraft(data.settings?.twitchLogin ?? '')
       }
       if (data.type === 'room_state') {
         setPlayers(data.players)
@@ -226,6 +228,7 @@ export default function Room() {
         setInviteCode(data.inviteCode ?? roomId ?? null)
         setAudienceCode(data.audienceCode ?? null)
         setSponsorSlot(data.sponsorSlot ?? null)
+        setTwitchLoginDraft(data.settings?.twitchLogin ?? '')
       }
       if (data.type === 'presence') {
         setPlayers(data.players)
@@ -239,6 +242,7 @@ export default function Room() {
       }
       if (data.type === 'settings') {
         setSettings(data.settings)
+        setTwitchLoginDraft(data.settings?.twitchLogin ?? '')
       }
       if (data.type === 'round_start') {
         setRound(data.round)
@@ -660,6 +664,12 @@ export default function Room() {
     const ws = socketRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return
     ws.send(JSON.stringify({ type: 'set_audience_mode', enabled }))
+  }
+
+  const saveTwitchLogin = () => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'set_twitch_login', login: twitchLoginDraft }))
   }
 
   const updateCategoryName = (id: string, name: string) => {
@@ -1117,6 +1127,24 @@ export default function Room() {
                           </button>
                           <button className="btn ghost" onClick={resetCategoryDrafts}>
                             Reset
+                          </button>
+                        </div>
+                      </div>
+                      <div className="setting-row">
+                        <div className="setting-info">
+                          <h4>Twitch login</h4>
+                          <p className="muted">Used for streamer sponsor eligibility checks.</p>
+                        </div>
+                        <div className="setting-control">
+                          <input
+                            type="text"
+                            placeholder="twitch_login"
+                            value={twitchLoginDraft}
+                            onChange={(e) => setTwitchLoginDraft(e.target.value)}
+                            className="input-inline"
+                          />
+                          <button className="btn outline" onClick={saveTwitchLogin} disabled={!isHost}>
+                            Save
                           </button>
                         </div>
                       </div>

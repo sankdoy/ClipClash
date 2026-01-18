@@ -775,6 +775,15 @@ body{
 	}
 	.setting-info h4{margin:0 0 4px}
 	.setting-control{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+	.input-inline{
+		border:1px solid var(--border);
+		padding:10px 12px;
+		border-radius:12px;
+		font-size:0.95rem;
+		background:var(--card-2);
+		color:var(--text);
+		min-width:220px;
+	}
 	.preset-grid{
 		display:grid;
 		grid-template-columns:repeat(auto-fit,minmax(200px,1fr));

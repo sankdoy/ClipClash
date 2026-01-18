@@ -23,6 +23,7 @@ export interface Settings {
   voteTickSeconds: number
   voteThreshold: number
   audienceModeEnabled: boolean
+  twitchLogin?: string
 }
 
 export interface Room {

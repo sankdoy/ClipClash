@@ -102,7 +102,8 @@ const defaultSettings: Settings = {
   defaultTime: 10,
   voteTickSeconds: 5,
   voteThreshold: 0.8,
-  audienceModeEnabled: false
+  audienceModeEnabled: false,
+  twitchLogin: ''
 }
 
 const defaultCategories = [
@@ -198,6 +199,11 @@ const setAudienceModeSchema = z.object({
   enabled: z.boolean()
 })
 
+const setTwitchLoginSchema = z.object({
+  type: z.literal('set_twitch_login'),
+  login: z.string().optional()
+})
+
 const clientMessageSchema = z.union([
   helloSchema,
   updateNameSchema,
@@ -217,7 +223,8 @@ const clientMessageSchema = z.union([
   voteSubmissionSchema,
   rpsSchema,
   reportSchema,
-  setAudienceModeSchema
+  setAudienceModeSchema,
+  setTwitchLoginSchema
 ])
 
 
@@ -1315,6 +1322,20 @@ export class RoomsDO implements DurableObject {
       this.broadcast({ type: 'timer', phase: this.phase, timer: this.timer })
       this.broadcast({ type: 'scoreboard', scoreboard: this.getScoreboard(), history: this.history })
       this.recordMatchStats()
+      this.persistState()
+      return
+    }
+
+    if (parsed.type === 'set_twitch_login') {
+      if (session.role !== 'player') return
+      if (!this.isHost(session)) return
+      const raw = parsed.login?.trim().toLowerCase() ?? ''
+      if (raw && !/^[a-z0-9_]{2,25}$/.test(raw)) {
+        ws.send(toServerMessage({ type: 'error', message: 'Invalid Twitch login.' }))
+        return
+      }
+      this.settings = { ...this.settings, twitchLogin: raw }
+      this.broadcast({ type: 'settings', settings: this.settings })
       this.persistState()
       return
     }
