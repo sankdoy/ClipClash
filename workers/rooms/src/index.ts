@@ -133,8 +133,7 @@ const helloSchema = z.object({
   sessionToken: z.string().min(1).optional(),
   inviteCode: z.string().min(1).optional(),
   audienceCode: z.string().min(1).optional(),
-  hostKey: z.string().min(1).optional(),
-  role: z.enum(['player', 'audience']).optional()
+  hostKey: z.string().min(1).optional()
 })
 
 const updateNameSchema = z.object({
