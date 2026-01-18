@@ -1,4 +1,6 @@
 import type { Env } from '../_helpers'
+import { getDB } from '../../_lib/db'
+import { jsonOk } from '../../_lib/responses'
 
 type TierRow = {
   tier_key: string
@@ -15,7 +17,8 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
     return new Response('Method Not Allowed', { status: 405 })
   }
 
-  const results = await env.DB.prepare('SELECT * FROM sponsor_tiers ORDER BY max_rank ASC').all()
+  const db = getDB(env)
+  const results = await db.prepare('SELECT * FROM sponsor_tiers ORDER BY max_rank ASC').all()
   const tiers = (results.results ?? []) as TierRow[]
   const tierData = tiers.map((tier) => {
     const effectiveCpm = tier.baseline_cpm_usd * (1 - tier.discount_rate)
@@ -28,7 +31,5 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
     }
   })
 
-  return new Response(JSON.stringify({ tiers: tierData }), {
-    headers: { 'content-type': 'application/json; charset=utf-8' }
-  })
+  return jsonOk({ tiers: tierData })
 }

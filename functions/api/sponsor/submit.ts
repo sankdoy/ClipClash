@@ -1,8 +1,7 @@
 import type { Env } from '../_helpers'
-
-function validateUrl(value: string) {
-  return value.startsWith('https://')
-}
+import { getDB } from '../../_lib/db'
+import { badRequest, jsonOk } from '../../_lib/responses'
+import { validateBrandName, validateEmail, validateHttpsUrl, validateTagline } from '../../_lib/validate'
 
 export async function onRequest({ env, request }: { env: Env; request: Request }) {
   if (request.method !== 'POST') {
@@ -18,25 +17,26 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
   const tierKey = String(formData.get('tier_key') ?? '').trim() || null
   const notes = String(formData.get('notes') ?? '').trim() || null
 
-  if (!validateUrl(destinationUrl)) {
-    return new Response('Invalid URL', { status: 400 })
+  if (!validateHttpsUrl(destinationUrl)) {
+    return badRequest('Invalid URL')
   }
-  if (brandName.length === 0 || brandName.length > 40) {
-    return new Response('Invalid brand name', { status: 400 })
+  if (!validateBrandName(brandName)) {
+    return badRequest('Invalid brand name')
   }
-  if (tagline.length === 0 || tagline.length > 80) {
-    return new Response('Invalid tagline', { status: 400 })
+  if (!validateTagline(tagline)) {
+    return badRequest('Invalid tagline')
   }
   if (!imageUrl) {
-    return new Response('Image URL required', { status: 400 })
+    return badRequest('Image URL required')
   }
-  if (!contactEmail) {
-    return new Response('Contact email required', { status: 400 })
+  if (!validateEmail(contactEmail)) {
+    return badRequest('Contact email required')
   }
 
   const id = crypto.randomUUID()
   const createdAt = new Date().toISOString()
-  await env.DB.prepare(
+  const db = getDB(env)
+  await db.prepare(
     `
     INSERT INTO sponsor_inquiries
       (id, created_at_iso, inventory_type, tier_key, brand_name, contact_email, destination_url, tagline, image_url, notes)
@@ -46,5 +46,5 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
     .bind(id, createdAt, inventoryType, tierKey, brandName, contactEmail, destinationUrl, tagline, imageUrl, notes)
     .run()
 
-  return new Response('Thanks — we will get back to you.', { status: 200 })
+  return jsonOk({ ok: true })
 }
