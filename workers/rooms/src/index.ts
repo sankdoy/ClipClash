@@ -684,6 +684,8 @@ export class RoomsDO implements DurableObject {
 
       if (hostKeyVerified) {
         this.hostId = playerId
+      } else if (!this.hostId) {
+        this.hostId = playerId
       }
 
       const existingSocket = replaceSocketForToken(this.tokenToSocket, sessionToken, ws)
