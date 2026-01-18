@@ -134,45 +134,63 @@ export default function Settings() {
     const objectUrl = URL.createObjectURL(file)
     img.onload = () => {
       URL.revokeObjectURL(objectUrl)
-      const maxSize = 1920
-      const scale = Math.min(1, maxSize / Math.max(img.width, img.height))
-      const width = Math.max(1, Math.round(img.width * scale))
-      const height = Math.max(1, Math.round(img.height * scale))
-      const canvas = document.createElement('canvas')
-      canvas.width = width
-      canvas.height = height
-      const ctx = canvas.getContext('2d')
-      if (!ctx) {
-        setStatus('Image resize failed. Try again.')
-        return
-      }
-      ctx.imageSmoothingEnabled = true
-      ctx.imageSmoothingQuality = 'high'
-      ctx.drawImage(img, 0, 0, width, height)
-      const outputType = file.type === 'image/png' || file.type === 'image/webp' ? 'image/png' : 'image/jpeg'
-      canvas.toBlob((blob) => {
-        if (!blob) {
-          setStatus('Image conversion failed. Try again.')
+      const encodeToBlob = (maxSize: number, quality: number) => new Promise<Blob | null>((resolve) => {
+        const scale = Math.min(1, maxSize / Math.max(img.width, img.height))
+        const width = Math.max(1, Math.round(img.width * scale))
+        const height = Math.max(1, Math.round(img.height * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          resolve(null)
           return
         }
-        const reader = new FileReader()
-        reader.onerror = () => {
-          setStatus('Image read failed. Try again.')
-        }
-        reader.onload = () => {
-          const result = typeof reader.result === 'string' ? reader.result : ''
-          if (!result) {
-            setStatus('Image conversion failed. Try again.')
-            return
+        ctx.imageSmoothingEnabled = true
+        ctx.imageSmoothingQuality = 'high'
+        ctx.fillStyle = '#0b0d12'
+        ctx.fillRect(0, 0, width, height)
+        ctx.drawImage(img, 0, 0, width, height)
+        canvas.toBlob((blob) => resolve(blob), 'image/jpeg', quality)
+      })
+
+      const attempts = [
+        { maxSize: 1920, quality: 0.82 },
+        { maxSize: 1920, quality: 0.7 },
+        { maxSize: 1920, quality: 0.55 },
+        { maxSize: 1440, quality: 0.7 }
+      ]
+
+      const run = async () => {
+        for (const attempt of attempts) {
+          const blob = await encodeToBlob(attempt.maxSize, attempt.quality)
+          if (!blob) continue
+          if (blob.size > 1_200_000 && attempt !== attempts[attempts.length - 1]) {
+            continue
           }
-          setBackgroundImage(result)
-          setStatus('Background loaded.')
-          if (bgInputRef.current) {
-            bgInputRef.current.value = ''
+          const reader = new FileReader()
+          reader.onerror = () => {
+            setStatus('Image read failed. Try again.')
           }
+          reader.onload = () => {
+            const result = typeof reader.result === 'string' ? reader.result : ''
+            if (!result) {
+              setStatus('Image conversion failed. Try again.')
+              return
+            }
+            setBackgroundImage(result)
+            setStatus('Background loaded.')
+            if (bgInputRef.current) {
+              bgInputRef.current.value = ''
+            }
+          }
+          reader.readAsDataURL(blob)
+          return
         }
-        reader.readAsDataURL(blob)
-      }, outputType, 0.82)
+        setStatus('Image conversion failed. Try a smaller image.')
+      }
+
+      run().catch(() => setStatus('Image conversion failed. Try again.'))
     }
     img.onerror = () => {
       URL.revokeObjectURL(objectUrl)
