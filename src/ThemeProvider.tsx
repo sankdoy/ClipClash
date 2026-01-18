@@ -62,9 +62,13 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
     } else {
       document.documentElement.style.removeProperty('--bg-image')
     }
-    window.localStorage.setItem(STORAGE_THEME, theme)
-    window.localStorage.setItem(STORAGE_CUSTOM, customCss)
-    window.localStorage.setItem(STORAGE_BG_IMAGE, backgroundImage)
+    try {
+      window.localStorage.setItem(STORAGE_THEME, theme)
+      window.localStorage.setItem(STORAGE_CUSTOM, customCss)
+      window.localStorage.setItem(STORAGE_BG_IMAGE, backgroundImage)
+    } catch (error) {
+      console.warn('Theme settings could not be saved to localStorage.', error)
+    }
   }, [theme, mode, customCss, backgroundImage])
 
   useEffect(() => {

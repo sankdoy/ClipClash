@@ -122,31 +122,91 @@ export default function Settings() {
   }
 
   const readBackgroundFile = (file: File) => {
-    if (!file.type.startsWith('image/')) {
+    if (file.type && !file.type.startsWith('image/')) {
       setStatus('Please choose an image file.')
       return
     }
-    if (file.size > 4 * 1024 * 1024) {
-      setStatus('Image too large. Max 4MB.')
+    if (file.size > 12 * 1024 * 1024) {
+      setStatus('Image too large. Max 12MB.')
       return
     }
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = typeof reader.result === 'string' ? reader.result : ''
-      setBackgroundImage(result)
-      setStatus('Background loaded.')
-      if (bgInputRef.current) {
-        bgInputRef.current.value = ''
+    const img = new Image()
+    const objectUrl = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl)
+      const maxSize = 1920
+      const scale = Math.min(1, maxSize / Math.max(img.width, img.height))
+      const width = Math.max(1, Math.round(img.width * scale))
+      const height = Math.max(1, Math.round(img.height * scale))
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        setStatus('Image resize failed. Try again.')
+        return
       }
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
+      ctx.drawImage(img, 0, 0, width, height)
+      const outputType = file.type === 'image/png' || file.type === 'image/webp' ? 'image/png' : 'image/jpeg'
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          setStatus('Image conversion failed. Try again.')
+          return
+        }
+        const reader = new FileReader()
+        reader.onerror = () => {
+          setStatus('Image read failed. Try again.')
+        }
+        reader.onload = () => {
+          const result = typeof reader.result === 'string' ? reader.result : ''
+          if (!result) {
+            setStatus('Image conversion failed. Try again.')
+            return
+          }
+          setBackgroundImage(result)
+          setStatus('Background loaded.')
+          if (bgInputRef.current) {
+            bgInputRef.current.value = ''
+          }
+        }
+        reader.readAsDataURL(blob)
+      }, outputType, 0.82)
     }
-    reader.readAsDataURL(file)
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      setStatus('This image format is not supported in your browser. Try PNG or JPG.')
+    }
+    img.src = objectUrl
+  }
+
+  const onBackgroundDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    setBgDragOver(true)
+  }
+
+  const onBackgroundDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setBgDragOver(true)
+  }
+
+  const onBackgroundDragLeave = () => {
+    setBgDragOver(false)
   }
 
   const onBackgroundDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault()
     setBgDragOver(false)
-    const file = event.dataTransfer.files?.[0]
-    if (file) readBackgroundFile(file)
+    const dataTransfer = event.dataTransfer
+    const item = dataTransfer.items?.[0]
+    const file = dataTransfer.files?.[0] ?? (item?.kind === 'file' ? item.getAsFile() : null)
+    if (file) {
+      readBackgroundFile(file)
+    } else {
+      setStatus('Drop an image file (not a link).')
+    }
   }
 
   return (
@@ -184,11 +244,9 @@ export default function Settings() {
         </label>
         <div
           className={`upload-drop ${bgDragOver ? 'active' : ''}`}
-          onDragOver={(event) => {
-            event.preventDefault()
-            setBgDragOver(true)
-          }}
-          onDragLeave={() => setBgDragOver(false)}
+          onDragOver={onBackgroundDragOver}
+          onDragEnter={onBackgroundDragEnter}
+          onDragLeave={onBackgroundDragLeave}
           onDrop={onBackgroundDrop}
         >
           <input

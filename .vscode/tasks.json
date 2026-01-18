@@ -1,0 +1,23 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "ClipClash: Dev (Vite)",
+      "type": "shell",
+      "command": "cd ClipClash && npm run dev",
+      "problemMatcher": []
+    },
+    {
+      "label": "ClipClash: Dev (Pages)",
+      "type": "shell",
+      "command": "cd ClipClash && npm run cf:dev",
+      "problemMatcher": []
+    },
+    {
+      "label": "ClipClash: Dev (Rooms Worker)",
+      "type": "shell",
+      "command": "cd ClipClash && npx wrangler dev --config workers/rooms/wrangler.toml",
+      "problemMatcher": []
+    }
+  ]
+}

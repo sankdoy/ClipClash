@@ -113,22 +113,60 @@ export default function Account() {
   }
 
   const readAvatarFile = (file: File) => {
-    if (!file.type.startsWith('image/')) {
+    if (file.type && !file.type.startsWith('image/')) {
       setStatus('Please choose an image file.')
-      return
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      setStatus('Image too large. Max 2MB.')
       return
     }
     const reader = new FileReader()
     reader.onload = () => {
       const result = typeof reader.result === 'string' ? reader.result : ''
-      setAvatarUrl(result)
-      setStatus('Avatar loaded. Save profile to apply.')
-      if (avatarInputRef.current) {
-        avatarInputRef.current.value = ''
+      if (!result) {
+        setStatus('Image load failed. Try a different file.')
+        return
       }
+      const img = new Image()
+      img.onload = () => {
+        const maxSize = 256
+        const scale = Math.min(1, maxSize / Math.max(img.width, img.height))
+        const width = Math.max(1, Math.round(img.width * scale))
+        const height = Math.max(1, Math.round(img.height * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          setStatus('Image resize failed. Try again.')
+          return
+        }
+        ctx.imageSmoothingEnabled = true
+        ctx.imageSmoothingQuality = 'high'
+        ctx.drawImage(img, 0, 0, width, height)
+        const outputType = file.type === 'image/png' || file.type === 'image/webp' ? 'image/png' : 'image/jpeg'
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            setStatus('Image conversion failed. Try again.')
+            return
+          }
+          const blobReader = new FileReader()
+          blobReader.onload = () => {
+            const compressed = typeof blobReader.result === 'string' ? blobReader.result : ''
+            if (!compressed) {
+              setStatus('Image conversion failed. Try again.')
+              return
+            }
+            setAvatarUrl(compressed)
+            setStatus('Avatar loaded. Save profile to apply.')
+            if (avatarInputRef.current) {
+              avatarInputRef.current.value = ''
+            }
+          }
+          blobReader.readAsDataURL(blob)
+        }, outputType, 0.85)
+      }
+      img.onerror = () => {
+        setStatus('This image format is not supported. Try PNG or JPG.')
+      }
+      img.src = result
     }
     reader.readAsDataURL(file)
   }
