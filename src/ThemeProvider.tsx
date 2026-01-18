@@ -16,7 +16,7 @@ type ThemeContextValue = {
 }
 
 export const ThemeContext = createContext<ThemeContextValue>({
-  theme: 'clash',
+  theme: 'neonTikTok',
   mode: 'system',
   setTheme: () => undefined,
   setMode: () => undefined,
@@ -30,18 +30,18 @@ type SettingsResponse = {
 }
 
 export default function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState('clash')
-  const [mode, setMode] = useState<ThemeMode>('system')
-  const [customCss, setCustomCss] = useState('')
-
-  useEffect(() => {
+  const [theme, setTheme] = useState(() => {
     const storedTheme = window.localStorage.getItem(STORAGE_THEME)
+    return storedTheme ?? 'neonTikTok'
+  })
+  const [mode, setMode] = useState<ThemeMode>(() => {
     const storedMode = window.localStorage.getItem(STORAGE_MODE) as ThemeMode | null
+    return storedMode ?? 'system'
+  })
+  const [customCss, setCustomCss] = useState(() => {
     const storedCustom = window.localStorage.getItem(STORAGE_CUSTOM)
-    if (storedTheme) setTheme(storedTheme)
-    if (storedMode) setMode(storedMode)
-    if (storedCustom) setCustomCss(storedCustom)
-  }, [])
+    return storedCustom ?? ''
+  })
 
   useEffect(() => {
     applyTheme(theme, mode)
