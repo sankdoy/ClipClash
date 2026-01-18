@@ -21,22 +21,31 @@ export default function Settings() {
   const [previousCss, setPreviousCss] = useState<string | null>(null)
   const [bgDragOver, setBgDragOver] = useState(false)
   const baseTemplate = `:root {
-  --accent: #ff5c00;
-  --accent-2: #3b82f6;
-  --bg: #f3f1eb;
-  --card: #ffffff;
-  --ink: #15151f;
-  --muted: #5c5f73;
-  --stroke: rgba(21, 21, 31, 0.12);
-  --shadow: 0 18px 40px rgba(21, 21, 31, 0.12);
+  --bg: #0f1116;
+  --bg-end: #0b0d12;
+  --panel: #171a22;
+  --card: #1f2430;
+  --card-2: #252c3a;
+  --border: #2f3a4f;
+  --text: #f4f6fb;
+  --text-muted: #c5ccda;
+  --text-dim: #8f98ad;
+  --accent: #ff7a1a;
+  --accent-hover: #ff9a43;
+  --accent-contrast: #1a0f08;
+  --danger: #ef4444;
+  --focus-ring: rgba(255, 154, 67, 0.45);
+  --disabled-bg: #232a38;
+  --disabled-text: #7f8a99;
+  --disabled-border: #2f3a4f;
+  --bg-dots: radial-gradient(circle, rgba(255, 255, 255, 0.18) 1px, transparent 1px);
 }
 
 /* Tips:
-- --accent + --accent-2 control buttons and highlights
-- --bg controls page background
-- --card controls card surfaces
-- --ink + --muted control text
-- --stroke + --shadow control borders/shadows */`
+- --bg / --bg-end control page background
+- --panel / --card / --card-2 control surfaces
+- --text / --text-muted / --text-dim control readability
+- --accent / --accent-hover control buttons + highlights */`
 
   useEffect(() => {
     setCustomDraft(customCss)

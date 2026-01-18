@@ -241,7 +241,7 @@
 		--surface-subtle:rgba(255,255,255,0.04);
 		--shadow-soft:0 8px 20px rgba(16,16,20,0.15);
 		--shadow:0 18px 40px rgba(0,0,0,0.35);
-		--bg-image:none;
+		--bg-image:linear-gradient(180deg, var(--bg-end) 0%, var(--bg-end) 100%);
 		--bg-dots:radial-gradient(circle, rgba(255,255,255,0.18) 1px, transparent 1px);
 	}
 	html,body{height:100%}
@@ -272,6 +272,11 @@
 			center,
 			center,
 			0 0;
+		background-repeat:
+			no-repeat,
+			no-repeat,
+			no-repeat,
+			repeat;
 		opacity:0.9;
 		z-index:-2;
 		animation:dots-drift 18s linear infinite, dots-pulse 6s ease-in-out infinite;

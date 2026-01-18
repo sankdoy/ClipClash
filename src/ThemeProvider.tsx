@@ -60,7 +60,7 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
     if (backgroundImage) {
       document.documentElement.style.setProperty('--bg-image', `url("${backgroundImage}")`)
     } else {
-      document.documentElement.style.setProperty('--bg-image', 'none')
+      document.documentElement.style.removeProperty('--bg-image')
     }
     window.localStorage.setItem(STORAGE_THEME, theme)
     window.localStorage.setItem(STORAGE_CUSTOM, customCss)
