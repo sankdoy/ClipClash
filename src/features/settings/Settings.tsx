@@ -20,11 +20,7 @@ export default function Settings() {
     customCss,
     setCustomCss,
     backgroundImage,
-    setBackgroundImage,
-    backgroundAnimationEnabled,
-    setBackgroundAnimationEnabled,
-    backgroundAnimationCss,
-    setBackgroundAnimationCss
+    setBackgroundImage
   } = useContext(ThemeContext)
   const [customDraft, setCustomDraft] = useState('')
   const [previewing, setPreviewing] = useState(false)
@@ -32,16 +28,6 @@ export default function Settings() {
   const [previousMode, setPreviousMode] = useState<string | null>(null)
   const [previousCss, setPreviousCss] = useState<string | null>(null)
   const [bgDragOver, setBgDragOver] = useState(false)
-  const defaultGlassCss = `.scene__glass{
-  --rain-speed: 12s;
-  --rain-opacity: 0.22;
-  --rain-blur: 0.8px;
-}
-
-.scene__glass::after{
-  opacity: 0.14;
-}
-`
   const baseTemplate = `:root {
   --bg: #0f1116;
   --bg-end: #0b0d12;
@@ -219,33 +205,6 @@ export default function Settings() {
             </button>
           </div>
         )}
-      </div>
-      <div className="card">
-        <h3>Background animation</h3>
-        <p className="muted">Toggle the animated glass overlay and customize the CSS.</p>
-        <div className="room-controls">
-          <button
-            className="btn outline"
-            onClick={() => setBackgroundAnimationEnabled(!backgroundAnimationEnabled)}
-          >
-            {backgroundAnimationEnabled ? 'Disable animation' : 'Enable animation'}
-          </button>
-          <button className="btn ghost" onClick={() => setBackgroundAnimationCss(defaultGlassCss)}>
-            Load starter CSS
-          </button>
-          <button className="btn ghost" onClick={() => setBackgroundAnimationCss('')}>
-            Clear custom CSS
-          </button>
-        </div>
-        <label className="field">
-          Custom animation CSS
-          <textarea
-            className="theme-editor"
-            value={backgroundAnimationCss}
-            onChange={(e) => setBackgroundAnimationCss(e.target.value)}
-            placeholder={defaultGlassCss}
-          />
-        </label>
       </div>
       <div className="card">
         <h3>Custom theme (advanced)</h3>

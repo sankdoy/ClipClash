@@ -5,8 +5,6 @@ import { getMe } from './utils/auth'
 const STORAGE_THEME = 'cc_theme'
 const STORAGE_CUSTOM = 'cc_custom_theme'
 const STORAGE_BG_IMAGE = 'cc_bg_image'
-const STORAGE_BG_ANIM_ENABLED = 'cc_bg_anim_enabled'
-const STORAGE_BG_ANIM_CSS = 'cc_bg_anim_css'
 
 type ThemeContextValue = {
   theme: string
@@ -17,10 +15,6 @@ type ThemeContextValue = {
   setCustomCss: (css: string) => void
   backgroundImage: string
   setBackgroundImage: (url: string) => void
-  backgroundAnimationEnabled: boolean
-  setBackgroundAnimationEnabled: (enabled: boolean) => void
-  backgroundAnimationCss: string
-  setBackgroundAnimationCss: (css: string) => void
 }
 
 export const ThemeContext = createContext<ThemeContextValue>({
@@ -31,11 +25,7 @@ export const ThemeContext = createContext<ThemeContextValue>({
   customCss: '',
   setCustomCss: () => undefined,
   backgroundImage: '',
-  setBackgroundImage: () => undefined,
-  backgroundAnimationEnabled: true,
-  setBackgroundAnimationEnabled: () => undefined,
-  backgroundAnimationCss: '',
-  setBackgroundAnimationCss: () => undefined
+  setBackgroundImage: () => undefined
 })
 
 type SettingsResponse = {
@@ -59,14 +49,6 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
     const storedImage = window.localStorage.getItem(STORAGE_BG_IMAGE)
     return storedImage ?? ''
   })
-  const [backgroundAnimationEnabled, setBackgroundAnimationEnabled] = useState(() => {
-    const stored = window.localStorage.getItem(STORAGE_BG_ANIM_ENABLED)
-    return stored ? stored === 'true' : true
-  })
-  const [backgroundAnimationCss, setBackgroundAnimationCss] = useState(() => {
-    const stored = window.localStorage.getItem(STORAGE_BG_ANIM_CSS)
-    return stored ?? ''
-  })
 
   useEffect(() => {
     applyTheme(theme, mode)
@@ -80,21 +62,10 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
     } else {
       document.documentElement.style.removeProperty('--bg-image')
     }
-    document.documentElement.dataset.bgAnim = backgroundAnimationEnabled ? 'on' : 'off'
-    const styleId = 'cc-bg-anim'
-    let style = document.getElementById(styleId) as HTMLStyleElement | null
-    if (!style) {
-      style = document.createElement('style')
-      style.id = styleId
-      document.head.appendChild(style)
-    }
-    style.textContent = backgroundAnimationCss.trim()
     window.localStorage.setItem(STORAGE_THEME, theme)
     window.localStorage.setItem(STORAGE_CUSTOM, customCss)
     window.localStorage.setItem(STORAGE_BG_IMAGE, backgroundImage)
-    window.localStorage.setItem(STORAGE_BG_ANIM_ENABLED, String(backgroundAnimationEnabled))
-    window.localStorage.setItem(STORAGE_BG_ANIM_CSS, backgroundAnimationCss)
-  }, [theme, mode, customCss, backgroundImage, backgroundAnimationEnabled, backgroundAnimationCss])
+  }, [theme, mode, customCss, backgroundImage])
 
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)')
@@ -122,17 +93,13 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
     mode,
     customCss,
     backgroundImage,
-    backgroundAnimationEnabled,
-    backgroundAnimationCss,
     setTheme: (next: string) => {
       if (themePacks.find((pack) => pack.id === next)) setTheme(next)
     },
     setMode,
     setCustomCss,
-    setBackgroundImage,
-    setBackgroundAnimationEnabled,
-    setBackgroundAnimationCss
-  }), [theme, mode, customCss, backgroundImage, backgroundAnimationEnabled, backgroundAnimationCss])
+    setBackgroundImage
+  }), [theme, mode, customCss, backgroundImage])
 
   return (
     <ThemeContext.Provider value={value}>

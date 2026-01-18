@@ -279,47 +279,51 @@ body{
 		inset:0;
 		z-index:1;
 		pointer-events:none;
-		--rain-speed: 12s;
-		--rain-opacity: 0.22;
-		--rain-blur: 0.8px;
+		--ball-speed: 10s;
+		--ball-opacity: 0.35;
+		--ball-blur: 0.6px;
+		--ball-size: 120px;
 	}
 	.scene__glass::before{
 		content:"";
 		position:absolute;
-		inset:-40%;
+		inset:-20%;
 		background:
-			repeating-linear-gradient(
-				120deg,
-				rgba(255,255,255,0.08) 0 1px,
-				rgba(255,255,255,0) 1px 14px
-			);
-		opacity:var(--rain-opacity);
-		filter: blur(var(--rain-blur));
+			radial-gradient(circle, rgba(255,255,255,0.55) 0 10px, rgba(255,255,255,0) 12px);
+		background-size: var(--ball-size) var(--ball-size);
+		opacity:var(--ball-opacity);
+		filter: blur(var(--ball-blur));
 		mix-blend-mode:soft-light;
-		animation:rain-fall var(--rain-speed) linear infinite;
+		animation:balls-wave var(--ball-speed) ease-in-out infinite;
 	}
 	.scene__glass::after{
 		content:"";
 		position:absolute;
 		inset:0;
 		background:
-			radial-gradient(circle, rgba(255,255,255,0.08) 1px, rgba(255,255,255,0) 2px);
-		background-size: 120px 120px;
-		opacity:0.14;
+			radial-gradient(circle, rgba(255,255,255,0.35) 0 8px, rgba(255,255,255,0) 10px);
+		background-size: calc(var(--ball-size) * 0.7) calc(var(--ball-size) * 0.7);
+		opacity:0.2;
 		mix-blend-mode:overlay;
-		animation:rain-drift calc(var(--rain-speed) * 1.3) ease-in-out infinite;
+		animation:balls-domino calc(var(--ball-speed) * 1.2) linear infinite;
 	}
-	[data-bg-anim="off"] .scene__glass{
-		display:none;
+	@keyframes balls-wave{
+		0%{
+			transform:translate3d(0,0,0);
+			background-position: 0 0;
+		}
+		50%{
+			transform:translate3d(-3%,2%,0);
+			background-position: calc(var(--ball-size) * 0.6) calc(var(--ball-size) * 0.35);
+		}
+		100%{
+			transform:translate3d(0,0,0);
+			background-position: 0 0;
+		}
 	}
-	@keyframes rain-fall{
-		0%{transform:translate3d(0,-10%,0)}
-		100%{transform:translate3d(0,10%,0)}
-	}
-	@keyframes rain-drift{
-		0%{transform:translate3d(0,0,0)}
-		50%{transform:translate3d(-2%,1%,0)}
-		100%{transform:translate3d(0,0,0)}
+	@keyframes balls-domino{
+		0%{background-position: 0 0}
+		100%{background-position: calc(var(--ball-size) * 1.2) calc(var(--ball-size) * -0.6)}
 	}
 	@keyframes dots-drift{
 		0%{background-position:center,center,center,0 0}
