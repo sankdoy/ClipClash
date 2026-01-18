@@ -5,3 +5,9 @@ dist/
 .DS_Store
 /.wrangler
 **/.wrangler/
+shared/**/*.js
+shared/**/*.js.map
+src/types/**/*.js
+src/types/**/*.js.map
+workers/rooms/src/**/*.js
+workers/rooms/src/**/*.js.map
