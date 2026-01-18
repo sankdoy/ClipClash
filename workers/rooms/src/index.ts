@@ -25,6 +25,8 @@ import { isTikTokUrl } from '../../../shared/tiktok'
 export interface Env {
   ROOMS_DO: DurableObjectNamespace
   DB?: D1Database
+  TWITCH_CLIENT_ID?: string
+  TWITCH_CLIENT_SECRET?: string
 }
 
 type Session = {
@@ -368,6 +370,8 @@ export class RoomsDO implements DurableObject {
   isClosed: boolean
   audienceCode: string | null
   hostKeyHash: string | null
+  twitchToken: string | null
+  twitchTokenExpiresAt: number | null
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state
@@ -410,6 +414,8 @@ export class RoomsDO implements DurableObject {
     this.isClosed = false
     this.audienceCode = null
     this.hostKeyHash = null
+    this.twitchToken = null
+    this.twitchTokenExpiresAt = null
 
     this.state.blockConcurrencyWhile(async () => {
       const stored = await this.state.storage.get<PersistedState>('room_state')
@@ -800,7 +806,7 @@ export class RoomsDO implements DurableObject {
         return
       }
       if (!this.sponsorSlot) {
-        this.sponsorSlot = buildDefaultSponsorSlot()
+        this.sponsorSlot = await this.assignSponsorSlot()
       }
       this.requiredDoneIds = new Set(
         Array.from(this.players.values())
@@ -1686,6 +1692,139 @@ export class RoomsDO implements DurableObject {
       .bind(accountId)
       .first()
     return row?.has_audience_mode === 1
+  }
+
+  async getTwitchToken() {
+    if (!this.env.TWITCH_CLIENT_ID || !this.env.TWITCH_CLIENT_SECRET) return null
+    const now = Date.now()
+    if (this.twitchToken && this.twitchTokenExpiresAt && now < this.twitchTokenExpiresAt - 60_000) {
+      return this.twitchToken
+    }
+    const params = new URLSearchParams()
+    params.set('client_id', this.env.TWITCH_CLIENT_ID)
+    params.set('client_secret', this.env.TWITCH_CLIENT_SECRET)
+    params.set('grant_type', 'client_credentials')
+    const res = await fetch('https://id.twitch.tv/oauth2/token', {
+      method: 'POST',
+      body: params
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    this.twitchToken = data.access_token ?? null
+    this.twitchTokenExpiresAt = now + (data.expires_in ? Number(data.expires_in) * 1000 : 0)
+    return this.twitchToken
+  }
+
+  async fetchLiveViewers(login: string) {
+    const token = await this.getTwitchToken()
+    if (!token) return { isLive: false, viewerCount: 0 }
+    const url = new URL('https://api.twitch.tv/helix/streams')
+    url.searchParams.set('user_login', login)
+    const res = await fetch(url.toString(), {
+      headers: {
+        'Client-Id': this.env.TWITCH_CLIENT_ID ?? '',
+        Authorization: `Bearer ${token}`
+      }
+    })
+    if (!res.ok) return { isLive: false, viewerCount: 0 }
+    const data = await res.json()
+    const stream = data?.data?.[0]
+    const viewerCount = stream?.viewer_count ?? 0
+    return { isLive: Boolean(stream), viewerCount }
+  }
+
+  async assignSponsorSlot() {
+    if (!this.env.DB) return buildDefaultSponsorSlot()
+    const roomId = this.state.id.toString()
+    const login = this.settings.twitchLogin?.trim().toLowerCase() ?? ''
+    if (login) {
+      const topRow = await this.env.DB.prepare(
+        'SELECT viewer_count FROM twitch_top250_cache WHERE login = ? LIMIT 1'
+      )
+        .bind(login)
+        .first()
+      if (topRow) {
+        const live = await this.fetchLiveViewers(login)
+        if (live.isLive) {
+          const effectiveViewers = Math.floor(live.viewerCount * 0.9)
+          if (effectiveViewers > 0) {
+            const campaign = await this.env.DB.prepare(
+              `SELECT id, brand_name, click_url, tagline, image_url, streamer_viewer_credits_remaining
+               FROM sponsor_campaigns
+               WHERE status = 'active' AND streamer_viewer_credits_remaining > 0
+               ORDER BY created_at ASC
+               LIMIT 1`
+            ).first()
+            if (campaign) {
+              const remaining = Number(campaign.streamer_viewer_credits_remaining ?? 0)
+              if (remaining >= effectiveViewers) {
+                const nextRemaining = remaining - effectiveViewers
+                const nextStatus = nextRemaining === 0 ? 'exhausted' : 'active'
+                await this.env.DB.prepare(
+                  `UPDATE sponsor_campaigns
+                   SET streamer_viewer_credits_remaining = ?, status = ?
+                   WHERE id = ?`
+                )
+                  .bind(nextRemaining, nextStatus, campaign.id)
+                  .run()
+                await this.env.DB.prepare(
+                  `INSERT INTO sponsor_impressions
+                    (id, campaign_id, room_id, type, viewers, occurred_at)
+                   VALUES (?, ?, ?, ?, ?, ?)`
+                )
+                  .bind(crypto.randomUUID(), campaign.id, roomId, 'streamer', effectiveViewers, Date.now())
+                  .run()
+                return {
+                  status: 'filled',
+                  sponsorName: campaign.brand_name ?? 'Sponsor',
+                  imageUrl: campaign.image_url ?? '',
+                  clickUrl: campaign.click_url ?? '/sponsor',
+                  tagline: campaign.tagline ?? ''
+                } as SponsorSlot
+              }
+            }
+          }
+        }
+      }
+    }
+
+    const standardCampaign = await this.env.DB.prepare(
+      `SELECT id, brand_name, click_url, tagline, image_url, standard_games_remaining
+       FROM sponsor_campaigns
+       WHERE status = 'active' AND standard_games_remaining > 0
+       ORDER BY created_at ASC
+       LIMIT 1`
+    ).first()
+
+    if (!standardCampaign) {
+      return buildDefaultSponsorSlot()
+    }
+
+    const remaining = Number(standardCampaign.standard_games_remaining ?? 0)
+    const nextRemaining = Math.max(remaining - 1, 0)
+    const nextStatus = nextRemaining === 0 ? 'exhausted' : 'active'
+    await this.env.DB.prepare(
+      `UPDATE sponsor_campaigns
+       SET standard_games_remaining = ?, status = ?
+       WHERE id = ?`
+    )
+      .bind(nextRemaining, nextStatus, standardCampaign.id)
+      .run()
+    await this.env.DB.prepare(
+      `INSERT INTO sponsor_impressions
+        (id, campaign_id, room_id, type, viewers, occurred_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+      .bind(crypto.randomUUID(), standardCampaign.id, roomId, 'standard', 3, Date.now())
+      .run()
+
+    return {
+      status: 'filled',
+      sponsorName: standardCampaign.brand_name ?? 'Sponsor',
+      imageUrl: standardCampaign.image_url ?? '',
+      clickUrl: standardCampaign.click_url ?? '/sponsor',
+      tagline: standardCampaign.tagline ?? ''
+    } as SponsorSlot
   }
 }
 
