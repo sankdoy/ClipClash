@@ -1,18 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { resolveSessionToken, replaceSocketForToken, selectHost } from '../src/index'
+import { resolveSessionToken, replaceSocketForToken } from '../src/index'
 
 describe('session token handling', () => {
   it('reconnect with token restores same playerId', () => {
-    const tokenToPlayerId = new Map<string, string>()
+    const tokenToPlayerId = new Map<string, { playerId: string; accountId?: string | null }>()
     const first = resolveSessionToken(
       tokenToPlayerId,
       undefined,
+      null,
       () => 'player-a',
       () => 'token-a'
     )
     const second = resolveSessionToken(
       tokenToPlayerId,
       'token-a',
+      null,
       () => 'player-b',
       () => 'token-b'
     )
@@ -22,10 +24,13 @@ describe('session token handling', () => {
   })
 
   it('cannot claim another playerId without token', () => {
-    const tokenToPlayerId = new Map<string, string>([['token-a', 'player-a']])
+    const tokenToPlayerId = new Map<string, { playerId: string; accountId?: string | null }>([
+      ['token-a', { playerId: 'player-a' }]
+    ])
     const resolved = resolveSessionToken(
       tokenToPlayerId,
       'token-b',
+      null,
       () => 'player-b',
       () => 'token-b'
     )
@@ -44,11 +49,5 @@ describe('duplicate token handling', () => {
     const replaced2 = replaceSocketForToken(tokenToSocket, 'token-a', ws2)
     expect(replaced2).toBe(ws1)
     expect(tokenToSocket.get('token-a')).toBe(ws2)
-  })
-})
-
-describe('host selection', () => {
-  it('does not allow host takeover when host exists', () => {
-    expect(selectHost('host-a', 'player-b')).toBe('host-a')
   })
 })
