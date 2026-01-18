@@ -13,13 +13,38 @@ type User = {
 export default function Settings() {
   const [status, setStatus] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
-  const { theme, mode, setTheme, customCss, setCustomCss, backgroundImage, setBackgroundImage } = useContext(ThemeContext)
+  const {
+    theme,
+    mode,
+    setTheme,
+    customCss,
+    setCustomCss,
+    backgroundImage,
+    setBackgroundImage,
+    backgroundAnimationEnabled,
+    setBackgroundAnimationEnabled,
+    backgroundAnimationCss,
+    setBackgroundAnimationCss
+  } = useContext(ThemeContext)
   const [customDraft, setCustomDraft] = useState('')
   const [previewing, setPreviewing] = useState(false)
   const [previousTheme, setPreviousTheme] = useState<string | null>(null)
   const [previousMode, setPreviousMode] = useState<string | null>(null)
   const [previousCss, setPreviousCss] = useState<string | null>(null)
   const [bgDragOver, setBgDragOver] = useState(false)
+  const defaultGlassCss = `.scene__glass{
+  --glass-blur: 18px;
+  --glass-sat: 175%;
+  --glass-contrast: 120%;
+  --glass-opacity: 0.55;
+  --glass-tint: 0.10;
+  --glass-speed: 22s;
+}
+
+.scene__glass::after{
+  opacity: 0.18;
+}
+`
   const baseTemplate = `:root {
   --bg: #0f1116;
   --bg-end: #0b0d12;
@@ -197,6 +222,33 @@ export default function Settings() {
             </button>
           </div>
         )}
+      </div>
+      <div className="card">
+        <h3>Background animation</h3>
+        <p className="muted">Toggle the animated glass overlay and customize the CSS.</p>
+        <div className="room-controls">
+          <button
+            className="btn outline"
+            onClick={() => setBackgroundAnimationEnabled(!backgroundAnimationEnabled)}
+          >
+            {backgroundAnimationEnabled ? 'Disable animation' : 'Enable animation'}
+          </button>
+          <button className="btn ghost" onClick={() => setBackgroundAnimationCss(defaultGlassCss)}>
+            Load starter CSS
+          </button>
+          <button className="btn ghost" onClick={() => setBackgroundAnimationCss('')}>
+            Clear custom CSS
+          </button>
+        </div>
+        <label className="field">
+          Custom animation CSS
+          <textarea
+            className="theme-editor"
+            value={backgroundAnimationCss}
+            onChange={(e) => setBackgroundAnimationCss(e.target.value)}
+            placeholder={defaultGlassCss}
+          />
+        </label>
       </div>
       <div className="card">
         <h3>Custom theme (advanced)</h3>

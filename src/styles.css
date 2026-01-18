@@ -245,7 +245,7 @@
 		--bg-dots:radial-gradient(circle, rgba(255,255,255,0.18) 1px, transparent 1px);
 	}
 	html,body{height:100%}
-	body{
+body{
 		font-family:'Manrope',ui-sans-serif,system-ui,Helvetica,Arial;
 		background:linear-gradient(180deg,var(--bg) 0%, var(--bg-end) 100%);
 		color:var(--text);
@@ -253,33 +253,86 @@
 		position:relative;
 		overflow-x:hidden;
 	}
-	body::before{
-		content:"";
-		position:fixed;
+	.scene{
+		position:relative;
+		min-height:100vh;
+		overflow:hidden;
+		background:var(--bg);
+	}
+	.scene__bg{
+		position:absolute;
 		inset:0;
 		background-image:
 			var(--bg-image),
-			var(--bg-glow-1),
-			var(--bg-glow-2),
-			var(--bg-dots);
-		background-size:
-			cover,
-			cover,
-			cover,
-			120px 120px;
-		background-position:
-			center,
-			center,
-			center,
-			0 0;
-		background-repeat:
-			no-repeat,
-			no-repeat,
-			no-repeat,
-			repeat;
-		opacity:0.9;
-		z-index:-2;
-		animation:dots-drift 18s linear infinite, dots-pulse 6s ease-in-out infinite;
+			linear-gradient(180deg,var(--bg) 0%, var(--bg-end) 100%);
+		background-size:cover, cover;
+		background-position:center, center;
+		background-repeat:no-repeat, no-repeat;
+		z-index:0;
+	}
+	.scene__content{
+		position:relative;
+		z-index:2;
+	}
+	.scene__glass{
+		position:absolute;
+		inset:0;
+		z-index:1;
+		pointer-events:none;
+		--glass-blur: 18px;
+		--glass-sat: 175%;
+		--glass-contrast: 120%;
+		--glass-opacity: 0.55;
+		--glass-tint: 0.10;
+		--glass-speed: 22s;
+		-webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) contrast(var(--glass-contrast));
+		backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) contrast(var(--glass-contrast));
+		background:
+			radial-gradient(35vmax 28vmax at 18% 22%, rgba(255,255,255,0.18), rgba(255,255,255,0.00) 60%),
+			radial-gradient(30vmax 34vmax at 82% 28%, rgba(110,220,255,0.14), rgba(255,255,255,0.00) 62%),
+			radial-gradient(34vmax 30vmax at 70% 78%, rgba(255,140,220,0.12), rgba(255,255,255,0.00) 60%),
+			radial-gradient(28vmax 26vmax at 28% 78%, rgba(160,255,200,0.10), rgba(255,255,255,0.00) 58%),
+			conic-gradient(from 180deg at 50% 50%,
+				rgba(255,255,255,0.00) 0deg,
+				rgba(255,255,255,0.06) 70deg,
+				rgba(255,255,255,0.00) 140deg,
+				rgba(255,255,255,0.05) 220deg,
+				rgba(255,255,255,0.00) 360deg);
+		opacity:var(--glass-opacity);
+		mix-blend-mode:soft-light;
+		box-shadow: inset 0 0 0 1px rgba(255,255,255,0.10);
+		background-color: rgba(255,255,255,var(--glass-tint));
+		animation:glass-drift var(--glass-speed) ease-in-out infinite;
+	}
+	.scene__glass::after{
+		content:"";
+		position:absolute;
+		inset:-30%;
+		-webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.35));
+		backdrop-filter: blur(calc(var(--glass-blur) * 0.35));
+		background:
+			repeating-radial-gradient(circle at 20% 30%,
+				rgba(255,255,255,0.05) 0 1px,
+				rgba(255,255,255,0.00) 1px 3px),
+			repeating-linear-gradient(135deg,
+				rgba(255,255,255,0.00) 0 14px,
+				rgba(255,255,255,0.06) 14px 18px,
+				rgba(255,255,255,0.00) 18px 34px);
+		opacity:0.18;
+		mix-blend-mode:overlay;
+		animation:glass-shimmer calc(var(--glass-speed) * 0.7) linear infinite;
+	}
+	[data-bg-anim="off"] .scene__glass{
+		display:none;
+	}
+	@keyframes glass-drift{
+		0%{transform:translate3d(0,0,0)}
+		50%{transform:translate3d(-2%,1%,0)}
+		100%{transform:translate3d(0,0,0)}
+	}
+	@keyframes glass-shimmer{
+		0%{transform:translate3d(0,0,0) rotate(0deg)}
+		100%{transform:translate3d(-2%,2%,0) rotate(360deg)}
 	}
 	@keyframes dots-drift{
 		0%{background-position:center,center,center,0 0}
@@ -300,18 +353,6 @@
 		min-height:100vh;
 		padding:24px;
 		position:relative;
-	}
-	.app::before{
-		content:"";
-		position:absolute;
-		top:-40px;
-		right:-80px;
-		width:260px;
-		height:260px;
-		border-radius:40% 60% 55% 45%;
-		background:var(--surface-glow);
-		filter:blur(2px);
-		z-index:-1;
 	}
 	.board{
 		max-width:1200px;
@@ -527,6 +568,12 @@
 		background-position:center;
 		border:1px solid var(--border);
 		box-shadow:var(--shadow-soft);
+	}
+	@media (prefers-reduced-motion: reduce){
+		.scene__glass,
+		.scene__glass::after{
+			animation:none;
+		}
 	}
 	.helper{margin:0;color:var(--text-dim);font-size:0.85rem}
 	.room-list{display:flex;flex-direction:column;gap:10px}

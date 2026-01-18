@@ -42,21 +42,27 @@ function Header() {
 
 export default function App() {
   return (
-    <div className="app">
-      <div className="board">
-        <Header />
-        <main className="board-body">
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/room/:roomId" element={<Room />} />
-            <Route path="/leaderboard" element={<Leaderboard />} />
-            <Route path="/donate" element={<Donations />} />
-            <Route path="/account" element={<Account />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/about" element={<About />} />
-            <Route path="/sponsor" element={<Sponsor />} />
-          </Routes>
-        </main>
+    <div className="scene">
+      <div className="scene__bg" aria-hidden="true" />
+      <div className="scene__glass" aria-hidden="true" />
+      <div className="scene__content">
+        <div className="app">
+          <div className="board">
+            <Header />
+            <main className="board-body">
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/room/:roomId" element={<Room />} />
+                <Route path="/leaderboard" element={<Leaderboard />} />
+                <Route path="/donate" element={<Donations />} />
+                <Route path="/account" element={<Account />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/about" element={<About />} />
+                <Route path="/sponsor" element={<Sponsor />} />
+              </Routes>
+            </main>
+          </div>
+        </div>
       </div>
     </div>
   )
