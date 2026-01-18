@@ -60,6 +60,11 @@ type ReportEntry = {
   reportedAt: number
 }
 
+type TokenRecord = {
+  playerId: string
+  accountId?: string | null
+}
+
 type PersistedState = {
   phase: Phase
   settings: Settings
@@ -81,7 +86,7 @@ type PersistedState = {
   scoreboard: ScoreboardEntry[]
   history: RoundHistoryEntry[]
   hostId?: string
-  sessionTokens: Record<string, string>
+  sessionTokens: Record<string, TokenRecord | string>
   reports: ReportEntry[]
   playerAccounts: Record<string, string>
   resultsRecorded?: boolean
@@ -279,18 +284,20 @@ async function resolveAccount(env: Env, request: Request) {
 }
 
 export function resolveSessionToken(
-  tokenToPlayerId: Map<string, string>,
+  tokenToPlayerId: Map<string, TokenRecord>,
   token: string | undefined,
+  accountId: string | null,
   createPlayerId: () => string,
   createToken: () => string
 ) {
   if (token && tokenToPlayerId.has(token)) {
-    return { playerId: tokenToPlayerId.get(token)!, sessionToken: token, isNew: false }
+    const record = tokenToPlayerId.get(token)!
+    return { playerId: record.playerId, sessionToken: token, isNew: false, accountId: record.accountId ?? null }
   }
   const playerId = createPlayerId()
   const sessionToken = createToken()
-  tokenToPlayerId.set(sessionToken, playerId)
-  return { playerId, sessionToken, isNew: true }
+  tokenToPlayerId.set(sessionToken, { playerId, accountId })
+  return { playerId, sessionToken, isNew: true, accountId }
 }
 
 export function replaceSocketForToken(
@@ -346,7 +353,7 @@ export class RoomsDO implements DurableObject {
   history: RoundHistoryEntry[]
   reports: ReportEntry[]
   hostId: string | null
-  tokenToPlayerId: Map<string, string>
+  tokenToPlayerId: Map<string, TokenRecord>
   tokenToSocket: Map<string, WebSocket>
   playerAccounts: Map<string, string>
   resultsRecorded: boolean
@@ -421,7 +428,15 @@ export class RoomsDO implements DurableObject {
       this.scoreboard = new Map((stored.scoreboard ?? []).map((entry) => [entry.entryId, entry]))
       this.history = stored.history ?? []
       this.hostId = stored.hostId ?? null
-      this.tokenToPlayerId = new Map(Object.entries(stored.sessionTokens ?? {}))
+      const storedTokens = stored.sessionTokens ?? {}
+      this.tokenToPlayerId = new Map(
+        Object.entries(storedTokens).map(([token, record]) => {
+          if (typeof record === 'string') {
+            return [token, { playerId: record, accountId: null }]
+          }
+          return [token, { playerId: record.playerId, accountId: record.accountId ?? null }]
+        })
+      )
       this.reports = stored.reports ?? []
       this.playerAccounts = new Map(Object.entries(stored.playerAccounts ?? {}))
       this.resultsRecorded = stored.resultsRecorded ?? false
@@ -562,11 +577,22 @@ export class RoomsDO implements DurableObject {
       const resolved = resolveSessionToken(
         this.tokenToPlayerId,
         token,
+        session.accountId,
         () => crypto.randomUUID(),
         generateSessionToken
       )
       const playerId = resolved.playerId
       const sessionToken = resolved.sessionToken
+
+      if (resolved.accountId && session.accountId && resolved.accountId !== session.accountId) {
+        ws.send(toServerMessage({ type: 'error', message: 'Session token does not match this account.' }))
+        ws.close(1000, 'Invalid session token')
+        return
+      }
+
+      if (session.accountId && !resolved.accountId && !resolved.isNew) {
+        this.tokenToPlayerId.set(sessionToken, { playerId, accountId: session.accountId })
+      }
 
       if (!this.inviteCode) {
         this.inviteCode = generateInviteCode()
@@ -1164,7 +1190,7 @@ export class RoomsDO implements DurableObject {
     }
 
     const tokensToRemove = Array.from(this.tokenToPlayerId.entries())
-      .filter(([, value]) => value === playerId)
+      .filter(([, value]) => value.playerId === playerId)
       .map(([token]) => token)
     for (const token of tokensToRemove) {
       this.tokenToPlayerId.delete(token)
