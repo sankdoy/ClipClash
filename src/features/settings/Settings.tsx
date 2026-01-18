@@ -13,12 +13,13 @@ type User = {
 export default function Settings() {
   const [status, setStatus] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
-  const { theme, mode, setTheme, customCss, setCustomCss } = useContext(ThemeContext)
+  const { theme, mode, setTheme, customCss, setCustomCss, backgroundImage, setBackgroundImage } = useContext(ThemeContext)
   const [customDraft, setCustomDraft] = useState('')
   const [previewing, setPreviewing] = useState(false)
   const [previousTheme, setPreviousTheme] = useState<string | null>(null)
   const [previousMode, setPreviousMode] = useState<string | null>(null)
   const [previousCss, setPreviousCss] = useState<string | null>(null)
+  const [bgDragOver, setBgDragOver] = useState(false)
   const baseTemplate = `:root {
   --accent: #ff5c00;
   --accent-2: #3b82f6;
@@ -94,10 +95,37 @@ export default function Settings() {
     setMode('system')
     setCustomCss('')
     setCustomDraft('')
+    setBackgroundImage('')
     window.localStorage.removeItem('cc_custom_theme')
     window.localStorage.removeItem('cc_theme')
     window.localStorage.removeItem('cc_mode')
+    window.localStorage.removeItem('cc_bg_image')
     setStatus('Theme reset to default.')
+  }
+
+  const readBackgroundFile = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setStatus('Please choose an image file.')
+      return
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      setStatus('Image too large. Max 4MB.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : ''
+      setBackgroundImage(result)
+      setStatus('Background loaded.')
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const onBackgroundDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setBgDragOver(false)
+    const file = event.dataTransfer.files?.[0]
+    if (file) readBackgroundFile(file)
   }
 
   return (
@@ -121,6 +149,45 @@ export default function Settings() {
           </button>
         )}
         {!user && <p className="muted">Theme saves locally unless you sign in.</p>}
+      </div>
+      <div className="card">
+        <h3>Background image</h3>
+        <label className="field">
+          Image URL
+          <input
+            type="text"
+            placeholder="https://example.com/background.jpg"
+            value={backgroundImage}
+            onChange={(e) => setBackgroundImage(e.target.value.trim())}
+          />
+        </label>
+        <div
+          className={`upload-drop ${bgDragOver ? 'active' : ''}`}
+          onDragOver={(event) => {
+            event.preventDefault()
+            setBgDragOver(true)
+          }}
+          onDragLeave={() => setBgDragOver(false)}
+          onDrop={onBackgroundDrop}
+        >
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              if (file) readBackgroundFile(file)
+            }}
+          />
+          <p className="muted">Drag an image here or click to choose a file.</p>
+        </div>
+        {backgroundImage && (
+          <div className="bg-preview">
+            <div className="bg-preview-image" style={{ backgroundImage: `url("${backgroundImage}")` }} />
+            <button className="btn ghost" onClick={() => setBackgroundImage('')}>
+              Clear background
+            </button>
+          </div>
+        )}
       </div>
       <div className="card">
         <h3>Custom theme (advanced)</h3>

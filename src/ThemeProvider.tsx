@@ -3,8 +3,8 @@ import { applyCustomTheme, applyTheme, clearCustomTheme, ThemeMode, themePacks }
 import { getMe } from './utils/auth'
 
 const STORAGE_THEME = 'cc_theme'
-const STORAGE_MODE = 'cc_mode'
 const STORAGE_CUSTOM = 'cc_custom_theme'
+const STORAGE_BG_IMAGE = 'cc_bg_image'
 
 type ThemeContextValue = {
   theme: string
@@ -13,15 +13,19 @@ type ThemeContextValue = {
   setMode: (mode: ThemeMode) => void
   customCss: string
   setCustomCss: (css: string) => void
+  backgroundImage: string
+  setBackgroundImage: (url: string) => void
 }
 
 export const ThemeContext = createContext<ThemeContextValue>({
-  theme: 'neonTikTok',
+  theme: 'clash',
   mode: 'system',
   setTheme: () => undefined,
   setMode: () => undefined,
   customCss: '',
-  setCustomCss: () => undefined
+  setCustomCss: () => undefined,
+  backgroundImage: '',
+  setBackgroundImage: () => undefined
 })
 
 type SettingsResponse = {
@@ -32,15 +36,18 @@ type SettingsResponse = {
 export default function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState(() => {
     const storedTheme = window.localStorage.getItem(STORAGE_THEME)
-    return storedTheme ?? 'neonTikTok'
+    return storedTheme ?? 'clash'
   })
   const [mode, setMode] = useState<ThemeMode>(() => {
-    const storedMode = window.localStorage.getItem(STORAGE_MODE) as ThemeMode | null
-    return storedMode ?? 'system'
+    return 'system'
   })
   const [customCss, setCustomCss] = useState(() => {
     const storedCustom = window.localStorage.getItem(STORAGE_CUSTOM)
     return storedCustom ?? ''
+  })
+  const [backgroundImage, setBackgroundImage] = useState(() => {
+    const storedImage = window.localStorage.getItem(STORAGE_BG_IMAGE)
+    return storedImage ?? ''
   })
 
   useEffect(() => {
@@ -50,10 +57,15 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
     } else {
       clearCustomTheme()
     }
+    if (backgroundImage) {
+      document.documentElement.style.setProperty('--bg-image', `url("${backgroundImage}")`)
+    } else {
+      document.documentElement.style.setProperty('--bg-image', 'none')
+    }
     window.localStorage.setItem(STORAGE_THEME, theme)
-    window.localStorage.setItem(STORAGE_MODE, mode)
     window.localStorage.setItem(STORAGE_CUSTOM, customCss)
-  }, [theme, mode, customCss])
+    window.localStorage.setItem(STORAGE_BG_IMAGE, backgroundImage)
+  }, [theme, mode, customCss, backgroundImage])
 
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)')
@@ -80,12 +92,14 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
     theme,
     mode,
     customCss,
+    backgroundImage,
     setTheme: (next: string) => {
       if (themePacks.find((pack) => pack.id === next)) setTheme(next)
     },
     setMode,
-    setCustomCss
-  }), [theme, mode, customCss])
+    setCustomCss,
+    setBackgroundImage
+  }), [theme, mode, customCss, backgroundImage])
 
   return (
     <ThemeContext.Provider value={value}>
