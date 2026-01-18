@@ -994,6 +994,19 @@ body{
 		font-weight:600;
 		text-align:left;
 	}
+	.round-thumb{
+		width:100%;
+		height:96px;
+		border-radius:12px;
+		border:1px solid var(--border);
+		background:
+			linear-gradient(140deg, rgba(255,255,255,0.08), rgba(255,255,255,0)),
+			linear-gradient(180deg, var(--panel) 0%, var(--card-2) 100%);
+	}
+	.round-label{
+		font-size:0.95rem;
+		color:var(--text);
+	}
 	.round-entry.selected{
 		border-color:var(--accent);
 		box-shadow:0 10px 24px var(--accent-shadow);

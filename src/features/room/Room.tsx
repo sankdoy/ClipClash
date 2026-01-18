@@ -834,7 +834,8 @@ export default function Room() {
                     onClick={() => sendVoteEntry(entry.id)}
                     disabled={!!tiebreak}
                   >
-                    <span>{entry.label}</span>
+                    <div className="round-thumb" aria-hidden="true" />
+                    <span className="round-label">{entry.label}</span>
                   </button>
                 ))}
               </div>
