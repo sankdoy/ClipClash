@@ -6,6 +6,14 @@ function makeRoomId() {
   return `room-${Math.random().toString(36).slice(2, 8)}`
 }
 
+function makeHostKey() {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes)
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('')
+}
+
 export default function Home() {
   const [status, setStatus] = useState<string>('loading')
   const [roomCode, setRoomCode] = useState('')
@@ -16,11 +24,12 @@ export default function Home() {
 
   const startRoom = () => {
     const newRoomId = makeRoomId()
+    const hostKey = makeHostKey()
     setRoomCode(newRoomId)
     if (roomVisibility === 'public') {
       saveLocalPublicRoom(newRoomId)
     }
-    navigate(`/room/${newRoomId}`)
+    navigate(`/room/${newRoomId}?hostKey=${hostKey}`)
   }
 
   const joinRoom = () => {

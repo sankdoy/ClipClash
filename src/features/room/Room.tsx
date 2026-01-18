@@ -150,6 +150,7 @@ export default function Room() {
   const submitTimersRef = useRef<Record<string, number>>({})
   const isTestPlayer = Boolean(new URLSearchParams(window.location.search).get('player'))
   const isAudienceView = new URLSearchParams(window.location.search).get('audience') === '1'
+  const hostKeyFromUrl = new URLSearchParams(window.location.search).get('hostKey') ?? undefined
 
   useEffect(() => {
     if (!roomId) return
@@ -165,7 +166,7 @@ export default function Room() {
       const playerLabel = new URLSearchParams(window.location.search).get('player')
       const autoName =
         playerLabel && !storedName && !displayName ? `Player ${playerLabel}` : null
-      const inviteFromUrl = new URLSearchParams(window.location.search).get('code') ?? roomId ?? undefined
+      const inviteFromUrl = new URLSearchParams(window.location.search).get('code') ?? undefined
       const audienceFromUrl = new URLSearchParams(window.location.search).get('audienceCode') ?? undefined
       if (autoName) {
         setDisplayName(autoName)
@@ -178,6 +179,7 @@ export default function Room() {
           type: 'hello',
           sessionToken: storedToken ?? undefined,
           inviteCode: inviteFromUrl ?? undefined,
+          hostKey: hostKeyFromUrl ?? undefined,
           role: isAudienceView ? 'audience' : 'player',
           audienceCode: audienceFromUrl ?? undefined
         })

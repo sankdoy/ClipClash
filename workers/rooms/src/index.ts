@@ -32,6 +32,7 @@ type Session = {
   sessionToken: string | null
   role: 'player' | 'audience'
   audienceId: string | null
+  hostKeyVerified: boolean
   accountId: string | null
   accountUsername: string | null
   displayName: string
@@ -87,6 +88,7 @@ type PersistedState = {
   inviteCode?: string
   isClosed?: boolean
   audienceCode?: string
+  hostKeyHash?: string
 }
 
 const defaultSettings: Settings = {
@@ -118,6 +120,7 @@ const helloSchema = z.object({
   sessionToken: z.string().min(1).optional(),
   inviteCode: z.string().min(1).optional(),
   audienceCode: z.string().min(1).optional(),
+  hostKey: z.string().min(1).optional(),
   role: z.enum(['player', 'audience']).optional()
 })
 
@@ -245,6 +248,12 @@ function generateInviteCode() {
   return `room-${Math.random().toString(36).slice(2, 8)}`
 }
 
+async function hashHostKey(value: string) {
+  const data = new TextEncoder().encode(value)
+  const digest = await crypto.subtle.digest('SHA-256', data)
+  return base64UrlEncode(new Uint8Array(digest))
+}
+
 function getCookie(headers: Headers, name: string) {
   const raw = headers.get('Cookie') ?? ''
   const parts = raw.split(';').map((part) => part.trim())
@@ -298,10 +307,6 @@ export function replaceSocketForToken(
   return null
 }
 
-export function selectHost(currentHostId: string | null, candidateId: string) {
-  return currentHostId ?? candidateId
-}
-
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
@@ -348,6 +353,7 @@ export class RoomsDO implements DurableObject {
   inviteCode: string | null
   isClosed: boolean
   audienceCode: string | null
+  hostKeyHash: string | null
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state
@@ -389,6 +395,7 @@ export class RoomsDO implements DurableObject {
     this.inviteCode = null
     this.isClosed = false
     this.audienceCode = null
+    this.hostKeyHash = null
 
     this.state.blockConcurrencyWhile(async () => {
       const stored = await this.state.storage.get<PersistedState>('room_state')
@@ -421,6 +428,7 @@ export class RoomsDO implements DurableObject {
       this.inviteCode = stored.inviteCode ?? null
       this.isClosed = stored.isClosed ?? false
       this.audienceCode = stored.audienceCode ?? null
+      this.hostKeyHash = stored.hostKeyHash ?? null
       this.submissions = new Map(
         Object.entries(stored.submissions ?? {}).map(([categoryId, items]) => [
           categoryId,
@@ -444,6 +452,7 @@ export class RoomsDO implements DurableObject {
       sessionToken: null,
       role: 'player',
       audienceId: null,
+      hostKeyVerified: false,
       accountId: account?.id ?? null,
       accountUsername: account?.username ?? null,
       displayName: 'Player',
@@ -459,6 +468,10 @@ export class RoomsDO implements DurableObject {
     this.sessions.set(server, session)
 
     return new Response(null, { status: 101, webSocket: client })
+  }
+
+  isHost(session: Session) {
+    return session.role === 'player' && session.playerId !== null && session.hostKeyVerified && this.hostId === session.playerId
   }
 
   async webSocketMessage(ws: WebSocket, message: string) {
@@ -528,6 +541,23 @@ export class RoomsDO implements DurableObject {
         return
       }
 
+      const incomingHostKey = parsed.hostKey?.trim() ?? null
+      let hostKeyVerified = false
+      if (incomingHostKey) {
+        if (!this.hostKeyHash) {
+          this.hostKeyHash = await hashHostKey(incomingHostKey)
+          hostKeyVerified = true
+        } else {
+          const candidateHash = await hashHostKey(incomingHostKey)
+          if (candidateHash !== this.hostKeyHash) {
+            ws.send(toServerMessage({ type: 'error', message: 'Invalid host key.' }))
+            ws.close(1000, 'Invalid host key')
+            return
+          }
+          hostKeyVerified = true
+        }
+      }
+
       const token = parsed.sessionToken?.trim()
       const resolved = resolveSessionToken(
         this.tokenToPlayerId,
@@ -541,7 +571,13 @@ export class RoomsDO implements DurableObject {
       if (!this.inviteCode) {
         this.inviteCode = generateInviteCode()
       }
-      if (resolved.isNew && this.inviteCode && parsed.inviteCode?.trim() !== this.inviteCode && this.players.size > 0) {
+      if (
+        resolved.isNew &&
+        this.inviteCode &&
+        parsed.inviteCode?.trim() !== this.inviteCode &&
+        this.players.size > 0 &&
+        !hostKeyVerified
+      ) {
         ws.send(toServerMessage({ type: 'error', message: 'Invalid room code.' }))
         ws.close(1000, 'Invalid room code')
         return
@@ -581,7 +617,9 @@ export class RoomsDO implements DurableObject {
         }
       }
 
-      this.hostId = selectHost(this.hostId, playerId)
+      if (hostKeyVerified) {
+        this.hostId = playerId
+      }
 
       const existingSocket = replaceSocketForToken(this.tokenToSocket, sessionToken, ws)
       if (existingSocket) {
@@ -596,6 +634,7 @@ export class RoomsDO implements DurableObject {
 
       session.playerId = playerId
       session.sessionToken = sessionToken
+      session.hostKeyVerified = hostKeyVerified
       this.sessions.set(ws, session)
       this.tokenToSocket.set(sessionToken, ws)
 
@@ -680,7 +719,7 @@ export class RoomsDO implements DurableObject {
     if (parsed.type === 'set_timer') {
       if (session.role !== 'player') return
       if (this.phase !== 'lobby') return
-      if (this.hostId !== session.playerId) return
+      if (!this.isHost(session)) return
       const minutes = Math.min(this.settings.maxTime, Math.max(this.settings.minTime, parsed.minutes))
       this.timer.targetMinutes = minutes
       this.timer.huntRemainingSeconds = null
@@ -722,7 +761,7 @@ export class RoomsDO implements DurableObject {
     if (parsed.type === 'start_hunt') {
       if (session.role !== 'player') return
       if (this.phase !== 'lobby') return
-      if (this.hostId !== session.playerId) return
+      if (!this.isHost(session)) return
       if (!this.allPlayersReady()) {
         ws.send(toServerMessage({ type: 'error', message: 'Waiting for players to ready up.' }))
         return
@@ -748,7 +787,7 @@ export class RoomsDO implements DurableObject {
 
     if (parsed.type === 'reset_match') {
       if (session.role !== 'player') return
-      if (this.hostId !== session.playerId) return
+      if (!this.isHost(session)) return
       this.resetMatch()
       this.broadcast({ type: 'timer', phase: this.phase, timer: this.timer })
       this.broadcast({ type: 'scoreboard', scoreboard: this.getScoreboard(), history: this.history })
@@ -758,7 +797,7 @@ export class RoomsDO implements DurableObject {
 
     if (parsed.type === 'assign_host') {
       if (session.role !== 'player') return
-      if (this.hostId !== session.playerId) return
+      if (!this.isHost(session)) return
       const target = this.players.get(parsed.playerId)
       if (!target || !target.isConnected) return
       this.hostId = target.id
@@ -769,7 +808,7 @@ export class RoomsDO implements DurableObject {
 
     if (parsed.type === 'kick_player') {
       if (session.role !== 'player') return
-      if (this.hostId !== session.playerId) return
+      if (!this.isHost(session)) return
       if (parsed.playerId === session.playerId) return
       this.kickPlayer(parsed.playerId)
       this.broadcastRoomState()
@@ -778,7 +817,7 @@ export class RoomsDO implements DurableObject {
     }
 
     if (parsed.type === 'close_room') {
-      if (this.hostId !== session.playerId) return
+      if (!this.isHost(session)) return
       this.isClosed = true
       this.broadcast({ type: 'room_closed', message: 'Room closed by host.' })
       for (const socket of this.sessions.keys()) {
@@ -789,7 +828,7 @@ export class RoomsDO implements DurableObject {
     }
 
     if (parsed.type === 'rotate_invite') {
-      if (this.hostId !== session.playerId) return
+      if (!this.isHost(session)) return
       this.inviteCode = generateInviteCode()
       this.broadcast({ type: 'invite_code', code: this.inviteCode })
       this.persistState()
@@ -798,7 +837,7 @@ export class RoomsDO implements DurableObject {
 
     if (parsed.type === 'update_categories') {
       if (session.role !== 'player') return
-      if (this.hostId !== session.playerId) return
+      if (!this.isHost(session)) return
       if (this.phase !== 'lobby') return
       const cleaned = this.cleanCategories(parsed.categories)
       if (!cleaned) {
@@ -815,7 +854,7 @@ export class RoomsDO implements DurableObject {
 
     if (parsed.type === 'set_audience_mode') {
       if (session.role !== 'player') return
-      if (this.hostId !== session.playerId) return
+      if (!this.isHost(session)) return
       if (!session.accountId) {
         ws.send(toServerMessage({ type: 'error', message: 'Sign in to enable Audience Mode.' }))
         return
@@ -1443,7 +1482,8 @@ export class RoomsDO implements DurableObject {
       resultsRecorded: this.resultsRecorded,
       inviteCode: this.inviteCode ?? undefined,
       isClosed: this.isClosed,
-      audienceCode: this.audienceCode ?? undefined
+      audienceCode: this.audienceCode ?? undefined,
+      hostKeyHash: this.hostKeyHash ?? undefined
     }
     await this.state.storage.put('room_state', payload)
   }
@@ -1478,10 +1518,7 @@ export class RoomsDO implements DurableObject {
   }
 
   pickNewHost() {
-    const connected = Array.from(this.players.values()).filter((player) => player.isConnected)
-    if (connected.length === 0) return null
-    connected.sort((a, b) => a.joinedAt - b.joinedAt)
-    return connected[0].id
+    return null
   }
 
   updateScoreboard(winnerId: string, categoryId: string, categoryName: string) {

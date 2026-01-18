@@ -121,7 +121,14 @@ export interface TimerState {
 }
 
 export type ClientMessage =
-  | { type: 'hello'; sessionToken?: string; inviteCode?: string; audienceCode?: string; role?: 'player' | 'audience' }
+  | {
+      type: 'hello'
+      sessionToken?: string
+      inviteCode?: string
+      audienceCode?: string
+      hostKey?: string
+      role?: 'player' | 'audience'
+    }
   | { type: 'chat'; message: string }
   | { type: 'set_ready'; ready: boolean }
   | { type: 'set_done'; done: boolean }
