@@ -3,28 +3,29 @@ import React, { useEffect, useState } from 'react'
 type FormState = {
   sponsorName: string
   tagline: string
-  destinationUrl: string
+  clickUrl: string
   imageUrl: string
   contactEmail: string
 }
 
-type Tier = {
-  tier_key: string
-  tier_label: string
-  max_rank: number
-  min_avg_viewers: number
-  baseline_cpm_usd: number
-  discount_rate: number
-  last_updated_iso: string
-  effective_cpm_usd: number
-  price_per_game_usd: number
-  display_price: number
+type BundlePrice = {
+  games?: number
+  credits?: number
+  price_usd: number
+}
+
+type TierResponse = {
+  pricePerViewer: number
+  pricePerGame: number
+  standardBundles: BundlePrice[]
+  streamerCreditBundles: BundlePrice[]
+  top250UpdatedAt: number | null
 }
 
 const initialForm: FormState = {
   sponsorName: '',
   tagline: '',
-  destinationUrl: '',
+  clickUrl: '',
   imageUrl: '',
   contactEmail: ''
 }
@@ -32,9 +33,10 @@ const initialForm: FormState = {
 export default function Sponsor() {
   const [form, setForm] = useState<FormState>(initialForm)
   const [status, setStatus] = useState<string | null>(null)
-  const [tiers, setTiers] = useState<Tier[]>([])
+  const [tiers, setTiers] = useState<TierResponse | null>(null)
   const [loading, setLoading] = useState(true)
-  const [tierKey, setTierKey] = useState('top5')
+  const [standardBundles, setStandardBundles] = useState<Record<number, number>>({})
+  const [streamerBundles, setStreamerBundles] = useState<Record<number, number>>({})
 
   const updateField = (key: keyof FormState, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -46,12 +48,9 @@ export default function Sponsor() {
       .then((res) => res.json())
       .then((data) => {
         if (!mounted) return
-        setTiers(data?.tiers ?? [])
-        if (data?.tiers?.length) {
-          setTierKey(data.tiers[0].tier_key)
-        }
+        setTiers(data ?? null)
       })
-      .catch(() => setTiers([]))
+      .catch(() => setTiers(null))
       .finally(() => setLoading(false))
     return () => {
       mounted = false
@@ -60,24 +59,61 @@ export default function Sponsor() {
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (!form.destinationUrl.startsWith('https://')) {
+    if (!form.clickUrl.startsWith('https://')) {
       setStatus('Destination URL must start with https://')
       return
     }
-    const payload = new FormData()
-    payload.append('inventory_type', 'Streamer Games')
-    payload.append('tier_key', tierKey)
-    payload.append('brand_name', form.sponsorName)
-    payload.append('contact_email', form.contactEmail)
-    payload.append('destination_url', form.destinationUrl)
-    payload.append('tagline', form.tagline)
-    payload.append('image_url', form.imageUrl)
-    const res = await fetch('/api/sponsor/submit', { method: 'POST', body: payload })
+    const standardGames = Object.entries(standardBundles).reduce((sum, [games, count]) => (
+      sum + Number(games) * count
+    ), 0)
+    const streamerViewerCredits = Object.entries(streamerBundles).reduce((sum, [credits, count]) => (
+      sum + Number(credits) * count
+    ), 0)
+    const payload = {
+      brandName: form.sponsorName,
+      contactEmail: form.contactEmail,
+      clickUrl: form.clickUrl,
+      tagline: form.tagline,
+      imageUrl: form.imageUrl,
+      standardGames,
+      streamerViewerCredits,
+      purchased: {
+        standardBundles: Object.entries(standardBundles).map(([games, count]) => ({
+          games: Number(games),
+          count
+        })),
+        streamerBundles: Object.entries(streamerBundles).map(([credits, count]) => ({
+          credits: Number(credits),
+          count
+        }))
+      }
+    }
+    const res = await fetch('/api/sponsor/submit', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
     setStatus(res.ok ? 'Thanks, we will contact you.' : 'Submission failed.')
     if (res.ok) {
       setForm(initialForm)
+      setStandardBundles({})
+      setStreamerBundles({})
     }
   }
+
+  const isCacheReady = Boolean(tiers?.top250UpdatedAt)
+  const totalStandardGames = Object.entries(standardBundles).reduce((sum, [games, count]) => (
+    sum + Number(games) * count
+  ), 0)
+  const totalStreamerCredits = Object.entries(streamerBundles).reduce((sum, [credits, count]) => (
+    sum + Number(credits) * count
+  ), 0)
+  const standardTotalUsd = tiers
+    ? Number((totalStandardGames * (tiers.pricePerGame ?? 0)).toFixed(2))
+    : 0
+  const streamerTotalUsd = tiers
+    ? Number((totalStreamerCredits * (tiers.pricePerViewer ?? 0)).toFixed(2))
+    : 0
 
   return (
     <div className="page">
@@ -98,7 +134,7 @@ export default function Sponsor() {
           <div>
             <h3>Pricing</h3>
             <p className="muted">
-              Phase 1: $25 per sponsored game. Later: CPM-based pricing after impressions tracking.
+              Standard games use 3 impressions per game. Streamer games consume live viewer credits.
             </p>
           </div>
           <div>
@@ -108,45 +144,119 @@ export default function Sponsor() {
             </p>
           </div>
         </div>
-        <h3>Streamer Games (Top 250 only)</h3>
-        <p className="muted">
-          Streamer Games only run when the host is inside the Top 250 streamers list. We price per
-          game by tier using the floor (minimum) average viewers of that tier.
-        </p>
         {loading ? (
           <p className="muted">Loading tiers...</p>
-        ) : tiers.length === 0 ? (
-          <p className="muted">Tier data unavailable.</p>
+        ) : !tiers ? (
+          <p className="muted">Pricing data unavailable.</p>
         ) : (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Tier</th>
-                  <th>Eligibility</th>
-                  <th>Tier floor avg viewers</th>
-                  <th>Effective CPM</th>
-                  <th>Price per streamer game</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tiers.map((tier) => (
-                  <tr key={tier.tier_key}>
-                    <td>{tier.tier_label}</td>
-                    <td>Rank 1–{tier.max_rank}</td>
-                    <td>{tier.min_avg_viewers}</td>
-                    <td>${tier.effective_cpm_usd.toFixed(2)}</td>
-                    <td>${tier.price_per_game_usd.toFixed(2)}</td>
-                  </tr>
+          <div className="pricing-grid">
+            <div className="panel-card">
+              <h3>Standard bundles</h3>
+              <p className="muted">Each game counts as 3 impressions.</p>
+              <div className="bundle-list">
+                {tiers.standardBundles.map((bundle) => (
+                  <div key={bundle.games} className="bundle-row">
+                    <div>
+                      <strong>{bundle.games} games</strong>
+                      <p className="muted">${bundle.price_usd.toFixed(2)}</p>
+                    </div>
+                    <div className="bundle-controls">
+                      <button
+                        className="btn ghost"
+                        type="button"
+                        onClick={() =>
+                          setStandardBundles((prev) => ({
+                            ...prev,
+                            [bundle.games!]: Math.max(0, (prev[bundle.games!] ?? 0) - 1)
+                          }))
+                        }
+                      >
+                        -
+                      </button>
+                      <span>{standardBundles[bundle.games!] ?? 0}</span>
+                      <button
+                        className="btn outline"
+                        type="button"
+                        onClick={() =>
+                          setStandardBundles((prev) => ({
+                            ...prev,
+                            [bundle.games!]: (prev[bundle.games!] ?? 0) + 1
+                          }))
+                        }
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </div>
+            <div className="panel-card">
+              <h3>Streamer viewer credits</h3>
+              <p className="muted">Consumed when host is live in Top 250. 10% AFK haircut.</p>
+              {!isCacheReady && (
+                <p className="muted">Top 250 cache warming up. Streamer credits unavailable.</p>
+              )}
+              <div className="bundle-list">
+                {tiers.streamerCreditBundles.map((bundle) => (
+                  <div key={bundle.credits} className="bundle-row">
+                    <div>
+                      <strong>{Number(bundle.credits).toLocaleString()} credits</strong>
+                      <p className="muted">${bundle.price_usd.toFixed(2)}</p>
+                    </div>
+                    <div className="bundle-controls">
+                      <button
+                        className="btn ghost"
+                        type="button"
+                        disabled={!isCacheReady}
+                        onClick={() =>
+                          setStreamerBundles((prev) => ({
+                            ...prev,
+                            [bundle.credits!]: Math.max(0, (prev[bundle.credits!] ?? 0) - 1)
+                          }))
+                        }
+                      >
+                        -
+                      </button>
+                      <span>{streamerBundles[bundle.credits!] ?? 0}</span>
+                      <button
+                        className="btn outline"
+                        type="button"
+                        disabled={!isCacheReady}
+                        onClick={() =>
+                          setStreamerBundles((prev) => ({
+                            ...prev,
+                            [bundle.credits!]: (prev[bundle.credits!] ?? 0) + 1
+                          }))
+                        }
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
       </div>
 
       <div className="card">
         <h3>Inquiry form</h3>
+        <div className="cart-summary">
+          <div>
+            <strong>Standard games</strong>
+            <p className="muted">{totalStandardGames} games · ${standardTotalUsd.toFixed(2)}</p>
+          </div>
+          <div>
+            <strong>Streamer credits</strong>
+            <p className="muted">{totalStreamerCredits.toLocaleString()} credits · ${streamerTotalUsd.toFixed(2)}</p>
+          </div>
+          <div>
+            <strong>Total</strong>
+            <p className="muted">${(standardTotalUsd + streamerTotalUsd).toFixed(2)}</p>
+          </div>
+        </div>
         <form onSubmit={submit} className="form-stack">
           <label className="field">
             Company / sponsor name
@@ -173,8 +283,8 @@ export default function Sponsor() {
             Destination URL (https required)
             <input
               type="url"
-              value={form.destinationUrl}
-              onChange={(e) => updateField('destinationUrl', e.target.value)}
+              value={form.clickUrl}
+              onChange={(e) => updateField('clickUrl', e.target.value)}
               required
             />
           </label>
@@ -186,16 +296,6 @@ export default function Sponsor() {
               onChange={(e) => updateField('imageUrl', e.target.value)}
               required
             />
-          </label>
-          <label className="field">
-            Tier (for Streamer Games)
-            <select value={tierKey} onChange={(e) => setTierKey(e.target.value)}>
-              {tiers.map((tier) => (
-                <option key={tier.tier_key} value={tier.tier_key}>
-                  {tier.tier_label}
-                </option>
-              ))}
-            </select>
           </label>
           <label className="field">
             Contact email
