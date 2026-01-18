@@ -16,6 +16,9 @@ export default function Account() {
   const [username, setUsername] = useState('')
   const [avatarUrl, setAvatarUrl] = useState('')
   const [avatarDragOver, setAvatarDragOver] = useState(false)
+  const [hasAudienceMode, setHasAudienceMode] = useState(false)
+  const [audienceLoading, setAudienceLoading] = useState(false)
+  const [audienceStatus, setAudienceStatus] = useState<string | null>(null)
 
   useEffect(() => {
     getMe().then((data) => {
@@ -23,8 +26,26 @@ export default function Account() {
         setUser(data.user)
         setUsername(data.user.username)
         setAvatarUrl(data.user.avatar_url ?? '')
+        fetchEntitlements()
       }
     })
+  }, [])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('audience') === 'success') {
+      fetchEntitlements()
+      setAudienceStatus('Purchase confirmed. Audience Mode unlocked.')
+      params.delete('audience')
+      const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`
+      window.history.replaceState({}, '', next)
+    }
+    if (params.get('audience') === 'cancel') {
+      setAudienceStatus('Purchase cancelled.')
+      params.delete('audience')
+      const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`
+      window.history.replaceState({}, '', next)
+    }
   }, [])
 
   const requestCode = async () => {
@@ -59,6 +80,35 @@ export default function Account() {
   const saveProfile = async () => {
     const ok = await updateProfile(username, avatarUrl)
     setStatus(ok ? 'Profile updated.' : 'Profile update failed.')
+  }
+
+  const fetchEntitlements = async () => {
+    const res = await fetch('/api/entitlements')
+    if (!res.ok) return
+    const data = await res.json()
+    setHasAudienceMode(Boolean(data?.hasAudienceMode))
+  }
+
+  const purchaseAudienceMode = async () => {
+    setAudienceLoading(true)
+    setAudienceStatus(null)
+    try {
+      const res = await fetch('/api/audience', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({})
+      })
+      const data = await res.json()
+      if (!res.ok || !data?.url) {
+        setAudienceStatus(data?.error ?? 'Unable to start checkout.')
+        return
+      }
+      window.location.assign(data.url)
+    } catch {
+      setAudienceStatus('Unable to start checkout.')
+    } finally {
+      setAudienceLoading(false)
+    }
   }
 
   const readAvatarFile = (file: File) => {
@@ -175,6 +225,20 @@ export default function Account() {
                 Log out
               </button>
             </div>
+          </div>
+          <div className="card">
+            <h3>Audience Mode</h3>
+            <p className="muted">Unlock spectator features for all your rooms.</p>
+            <div className="room-controls">
+              {hasAudienceMode ? (
+                <span className="muted">Owned</span>
+              ) : (
+                <button className="btn primary" onClick={purchaseAudienceMode} disabled={audienceLoading}>
+                  {audienceLoading ? 'Checkout...' : 'Purchase ($30)'}
+                </button>
+              )}
+            </div>
+            {audienceStatus && <p className="muted">{audienceStatus}</p>}
           </div>
         </>
       )}

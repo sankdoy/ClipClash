@@ -1425,7 +1425,9 @@ export default function Room() {
           </div>
           <div className="panel-card">
             <h3>Sponsor</h3>
-            <div className="sponsor-slot">Buy this slot</div>
+            <Link className="sponsor-slot" to="/sponsor">
+              Buy this slot
+            </Link>
             <p className="muted">One sponsor per match. No popups.</p>
             <Link className="muted" to="/donate">
               Support the site

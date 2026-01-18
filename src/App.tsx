@@ -26,6 +26,9 @@ function Header() {
         <Link className="icon-btn" to="/donate">
           Donate
         </Link>
+        <Link className="icon-btn" to="/sponsor">
+          Sponsor
+        </Link>
         <Link className="icon-btn" to="/leaderboard">
           Rank
         </Link>
