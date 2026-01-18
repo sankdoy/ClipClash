@@ -1,3 +1,4 @@
+/// <reference types="@cloudflare/workers-types" />
 import type {
   ChatMessage,
   Category,
@@ -96,6 +97,10 @@ type PersistedState = {
   isClosed?: boolean
   audienceCode?: string
   hostKeyHash?: string
+}
+
+type TwitchStreamResponse = {
+  data?: Array<{ viewer_count: number }>
 }
 
 const defaultSettings: Settings = {
@@ -418,27 +423,45 @@ export class RoomsDO implements DurableObject {
     this.twitchTokenExpiresAt = null
 
     this.state.blockConcurrencyWhile(async () => {
-      const stored = await this.state.storage.get<PersistedState>('room_state')
+      const stored = (await this.state.storage.get<PersistedState>('room_state')) ?? null
       if (!stored) return
       this.phase = stored.phase
       this.settings = { ...defaultSettings, ...(stored.settings ?? {}) }
       this.timer = stored.timer
       this.chat = stored.chat ?? []
-      this.players = new Map((stored.players ?? []).map((player) => [player.id, player]))
-      this.readyByPlayer = new Map(Object.entries(stored.readyByPlayer ?? {}).map(([id, ready]) => [id, ready]))
-      this.doneByPlayer = new Map(Object.entries(stored.doneByPlayer ?? {}).map(([id, done]) => [id, done]))
+      this.players = new Map((stored.players ?? []).map((player: PlayerRecord) => [player.id, player]))
+      const readyRaw = stored.readyByPlayer ?? {}
+      this.readyByPlayer = new Map(
+        Object.entries(readyRaw as Record<string, boolean>).map(([id, ready]) => [id, ready])
+      )
+      const doneRaw = stored.doneByPlayer ?? {}
+      this.doneByPlayer = new Map(
+        Object.entries(doneRaw as Record<string, boolean>).map(([id, done]) => [id, done])
+      )
       this.requiredDoneIds = new Set(stored.requiredDoneIds ?? [])
-      this.votesByAudience = new Map(Object.entries(stored.votesByAudience ?? {}))
+      const votesAudienceRaw = stored.votesByAudience ?? {}
+      this.votesByAudience = new Map(
+        Object.entries(votesAudienceRaw as Record<string, string>).map(([id, vote]) => [id, vote])
+      )
       this.sponsorSlot = stored.sponsorSlot ?? null
       this.categories = stored.categories ?? [...defaultCategories]
+      const draftsRaw = stored.draftsByPlayer ?? {}
       this.draftsByPlayer = new Map(
-        Object.entries(stored.draftsByPlayer ?? {}).map(([playerId, drafts]) => [playerId, drafts])
+        Object.entries(draftsRaw as Record<string, DraftsByCategory>).map(([playerId, drafts]) => [
+          playerId,
+          drafts as DraftsByCategory
+        ])
       )
       this.categoryIndex = stored.categoryIndex ?? 0
       this.round = stored.round
       this.tiebreak = stored.tiebreak
-      this.votesByPlayer = new Map(Object.entries(stored.votesByPlayer ?? {}))
-      this.scoreboard = new Map((stored.scoreboard ?? []).map((entry) => [entry.entryId, entry]))
+      const votesPlayerRaw = stored.votesByPlayer ?? {}
+      this.votesByPlayer = new Map(
+        Object.entries(votesPlayerRaw as Record<string, string>).map(([id, vote]) => [id, vote])
+      )
+      this.scoreboard = new Map(
+        (stored.scoreboard ?? []).map((entry: ScoreboardEntry) => [entry.entryId, entry])
+      )
       this.history = stored.history ?? []
       this.hostId = stored.hostId ?? null
       const storedTokens = stored.sessionTokens ?? {}
@@ -457,10 +480,13 @@ export class RoomsDO implements DurableObject {
       this.isClosed = stored.isClosed ?? false
       this.audienceCode = stored.audienceCode ?? null
       this.hostKeyHash = stored.hostKeyHash ?? null
+      const submissionsRaw = stored.submissions ?? {}
       this.submissions = new Map(
-        Object.entries(stored.submissions ?? {}).map(([categoryId, items]) => [
+        Object.entries(submissionsRaw as Record<string, Submission[]>).map(([categoryId, items]) => [
           categoryId,
-          new Map(items.map((item) => [item.playerId, item]))
+          new Map(
+            (Array.isArray(items) ? (items as Submission[]) : []).map((item: Submission) => [item.playerId, item])
+          )
         ])
       )
     })
@@ -1332,19 +1358,6 @@ export class RoomsDO implements DurableObject {
       return
     }
 
-    if (parsed.type === 'set_twitch_login') {
-      if (session.role !== 'player') return
-      if (!this.isHost(session)) return
-      const raw = parsed.login?.trim().toLowerCase() ?? ''
-      if (raw && !/^[a-z0-9_]{2,25}$/.test(raw)) {
-        ws.send(toServerMessage({ type: 'error', message: 'Invalid Twitch login.' }))
-        return
-      }
-      this.settings = { ...this.settings, twitchLogin: raw }
-      this.broadcast({ type: 'settings', settings: this.settings })
-      this.persistState()
-      return
-    }
     const category = this.categories[this.categoryIndex]
     this.categoryIndex += 1
     const entries = this.buildRoundEntries(category.id)
@@ -1727,7 +1740,7 @@ export class RoomsDO implements DurableObject {
       }
     })
     if (!res.ok) return { isLive: false, viewerCount: 0 }
-    const data = await res.json()
+    const data = (await res.json()) as TwitchStreamResponse
     const stream = data?.data?.[0]
     const viewerCount = stream?.viewer_count ?? 0
     return { isLive: Boolean(stream), viewerCount }
