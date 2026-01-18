@@ -479,6 +479,16 @@ export default function Room() {
     const params = new URLSearchParams(window.location.search)
     if (params.get('audience') === 'success') {
       fetchEntitlements()
+      setAudienceStatus('Purchase confirmed. Audience Mode unlocked.')
+      params.delete('audience')
+      const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`
+      window.history.replaceState({}, '', next)
+    }
+    if (params.get('audience') === 'cancel') {
+      setAudienceStatus('Purchase cancelled.')
+      params.delete('audience')
+      const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`
+      window.history.replaceState({}, '', next)
     }
   }, [])
 
