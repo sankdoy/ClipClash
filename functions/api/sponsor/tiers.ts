@@ -1,5 +1,4 @@
 import type { Env } from '../_helpers'
-import { getDB } from '../../_lib/db'
 import { jsonOk } from '../../_lib/responses'
 
 const PRICE_PER_1K_CREDITS_USD = 8.0
