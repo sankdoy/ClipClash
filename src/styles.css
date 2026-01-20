@@ -918,10 +918,22 @@ body{
 		color:var(--danger);
 	}
 	.help-graphic{
-		height:120px;
+		height:150px;
 		border-radius:14px;
 		background:var(--help-bg);
 		border:1px solid var(--border);
+		display:flex;
+		align-items:center;
+		justify-content:center;
+		font-weight:700;
+		color:var(--text);
+		text-align:center;
+		padding:0 12px;
+	}
+	.help-nav{
+		display:flex;
+		gap:10px;
+		margin:8px 0 4px;
 	}
 	.help-dots{display:flex;gap:6px}
 	.dot{

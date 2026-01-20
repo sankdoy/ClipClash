@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getHealth, getRooms } from '../../utils/api'
 
@@ -20,15 +20,27 @@ export default function Home() {
   const [publicRooms, setPublicRooms] = useState<Array<{ id: string; name: string; players: number; capacity: number }>>([])
   const [roomsStatus, setRoomsStatus] = useState<'loading' | 'ok' | 'error'>('loading')
   const [roomVisibility, setRoomVisibility] = useState<'public' | 'private'>('public')
+  const [helpIndex, setHelpIndex] = useState(0)
   const navigate = useNavigate()
+  const helpSlides = useMemo(() => ([
+    {
+      title: 'Set the pace',
+      copy: 'Vote on the timer, then lock in categories before the hunt starts.'
+    },
+    {
+      title: 'Hunt the clip',
+      copy: 'Find a TikTok that fits the prompt and submit before time runs out.'
+    },
+    {
+      title: 'Vote + crown',
+      copy: 'Everyone votes each round. The top clip wins and the scoreboard updates.'
+    }
+  ]), [])
 
   const startRoom = () => {
     const newRoomId = makeRoomId()
     const hostKey = makeHostKey()
     setRoomCode(newRoomId)
-    if (roomVisibility === 'public') {
-      saveLocalPublicRoom(newRoomId)
-    }
     navigate(`/room/${newRoomId}?hostKey=${hostKey}`)
   }
 
@@ -61,8 +73,7 @@ export default function Home() {
       .then((data) => {
         if (!mounted) return
         if (data?.rooms) {
-          const localRooms = loadLocalPublicRooms()
-          setPublicRooms([...localRooms, ...data.rooms])
+          setPublicRooms(data.rooms)
           setRoomsStatus('ok')
         } else {
           setRoomsStatus('error')
@@ -143,12 +154,30 @@ export default function Home() {
         <aside className="home-side">
           <div className="panel-card">
             <h3>How to play</h3>
-            <div className="help-graphic" />
-            <p className="muted">Vote the timer, hunt clips, then crown a winner each round.</p>
+            <div className="help-graphic">
+              <span>{helpSlides[helpIndex].title}</span>
+            </div>
+            <p className="muted">{helpSlides[helpIndex].copy}</p>
+            <div className="help-nav">
+              <button
+                className="btn ghost"
+                type="button"
+                onClick={() => setHelpIndex((prev) => (prev - 1 + helpSlides.length) % helpSlides.length)}
+              >
+                ←
+              </button>
+              <button
+                className="btn ghost"
+                type="button"
+                onClick={() => setHelpIndex((prev) => (prev + 1) % helpSlides.length)}
+              >
+                →
+              </button>
+            </div>
             <div className="help-dots">
-              <span className="dot active" />
-              <span className="dot" />
-              <span className="dot" />
+              {helpSlides.map((_, index) => (
+                <span key={`help-dot-${index}`} className={`dot ${index === helpIndex ? 'active' : ''}`} />
+              ))}
             </div>
           </div>
           <div className="panel-card">
@@ -156,6 +185,9 @@ export default function Home() {
             <div className="room-list">
               {roomsStatus === 'loading' && <p className="muted">Loading rooms...</p>}
               {roomsStatus === 'error' && <p className="muted">Rooms unavailable.</p>}
+              {roomsStatus === 'ok' && publicRooms.length === 0 && (
+                <p className="muted">No public rooms yet.</p>
+              )}
               {roomsStatus === 'ok' && publicRooms.map((room) => (
                 <button
                   key={room.id}
@@ -173,34 +205,4 @@ export default function Home() {
       </section>
     </div>
   )
-}
-
-function loadLocalPublicRooms() {
-  try {
-    const raw = window.localStorage.getItem('cc_public_rooms')
-    if (!raw) return []
-    const parsed = JSON.parse(raw) as Array<{ id: string; name: string; createdAt: number }>
-    return parsed.map((room) => ({
-      id: room.id,
-      name: room.name,
-      players: 0,
-      capacity: 10
-    }))
-  } catch {
-    return []
-  }
-}
-
-function saveLocalPublicRoom(roomId: string) {
-  try {
-    const raw = window.localStorage.getItem('cc_public_rooms')
-    const existing = raw ? (JSON.parse(raw) as Array<{ id: string; name: string; createdAt: number }>) : []
-    const next = [
-      { id: roomId, name: `Room ${roomId}`, createdAt: Date.now() },
-      ...existing.filter((room) => room.id !== roomId)
-    ].slice(0, 12)
-    window.localStorage.setItem('cc_public_rooms', JSON.stringify(next))
-  } catch {
-    return
-  }
 }
