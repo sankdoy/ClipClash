@@ -12,12 +12,4 @@ database_id = "d67646ad-23b5-41ae-8296-dfe477eff752"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["RoomsDO"]
-
-[[migrations]]
-tag = "v2"
-new_sqlite_classes = ["RoomsDO"]
-
-[[migrations]]
-tag = "v3"
 new_sqlite_classes = ["RoomsDOv2"]
