@@ -531,6 +531,11 @@ export class RoomsDO implements DurableObject {
     const parsed = safeJsonParse(message)
     if (!parsed) {
       ws.send(toServerMessage({ type: 'error', message: 'Invalid message payload.' }))
+      void this.logEvent({
+        level: 'warn',
+        eventType: 'ws_invalid_payload',
+        message: 'Invalid message payload.'
+      })
       return
     }
 
@@ -549,6 +554,11 @@ export class RoomsDO implements DurableObject {
       if (this.isClosed) {
         ws.send(toServerMessage({ type: 'room_closed', message: 'Room closed by host.' }))
         ws.close(1000, 'Room closed')
+        void this.logEvent({
+          level: 'warn',
+          eventType: 'room_closed_reject',
+          message: 'Room closed by host.'
+        })
         return
       }
 
@@ -557,11 +567,21 @@ export class RoomsDO implements DurableObject {
         if (!this.settings.audienceModeEnabled) {
           ws.send(toServerMessage({ type: 'error', message: 'Audience Mode not enabled.' }))
           ws.close(1000, 'Audience disabled')
+          void this.logEvent({
+            level: 'warn',
+            eventType: 'audience_reject_disabled',
+            message: 'Audience Mode not enabled.'
+          })
           return
         }
         if (!this.audienceCode || audienceCode !== this.audienceCode) {
           ws.send(toServerMessage({ type: 'error', message: 'Invalid audience code.' }))
           ws.close(1000, 'Invalid audience code')
+          void this.logEvent({
+            level: 'warn',
+            eventType: 'audience_reject_code',
+            message: 'Invalid audience code.'
+          })
           return
         }
         session.role = 'audience'
@@ -591,6 +611,12 @@ export class RoomsDO implements DurableObject {
       )
         this.broadcastRoomState()
         this.persistState()
+        void this.logEvent({
+          level: 'info',
+          eventType: 'audience_join',
+          playerId: session.audienceId,
+          accountId: session.accountId ?? null
+        })
         return
       }
 
@@ -605,6 +631,11 @@ export class RoomsDO implements DurableObject {
           if (candidateHash !== this.hostKeyHash) {
             ws.send(toServerMessage({ type: 'error', message: 'Invalid host key.' }))
             ws.close(1000, 'Invalid host key')
+            void this.logEvent({
+              level: 'warn',
+              eventType: 'hostkey_reject',
+              message: 'Invalid host key.'
+            })
             return
           }
           hostKeyVerified = true
@@ -625,6 +656,11 @@ export class RoomsDO implements DurableObject {
       if (resolved.accountId && session.accountId && resolved.accountId !== session.accountId) {
         ws.send(toServerMessage({ type: 'error', message: 'Session token does not match this account.' }))
         ws.close(1000, 'Invalid session token')
+        void this.logEvent({
+          level: 'warn',
+          eventType: 'session_token_mismatch',
+          message: 'Session token does not match this account.'
+        })
         return
       }
 
@@ -644,6 +680,11 @@ export class RoomsDO implements DurableObject {
       ) {
         ws.send(toServerMessage({ type: 'error', message: 'Invalid room code.' }))
         ws.close(1000, 'Invalid room code')
+        void this.logEvent({
+          level: 'warn',
+          eventType: 'invite_reject',
+          message: 'Invalid room code.'
+        })
         return
       }
 
@@ -683,7 +724,7 @@ export class RoomsDO implements DurableObject {
 
       if (hostKeyVerified) {
         this.hostId = playerId
-      } else if (!this.hostId) {
+      } else if (!this.hostId || this.players.size === 0) {
         this.hostId = playerId
       }
 
@@ -728,6 +769,13 @@ export class RoomsDO implements DurableObject {
 
       this.broadcastRoomState()
       this.persistState()
+      void this.logEvent({
+        level: 'info',
+        eventType: 'player_join',
+        playerId,
+        accountId: session.accountId ?? null,
+        meta: { host: this.hostId === playerId }
+      })
       return
     }
 
@@ -867,6 +915,12 @@ export class RoomsDO implements DurableObject {
       const target = this.players.get(parsed.playerId)
       if (!target || !target.isConnected) return
       this.hostId = target.id
+      void this.logEvent({
+        level: 'info',
+        eventType: 'assign_host',
+        playerId: target.id,
+        accountId: session.accountId ?? null
+      })
       this.broadcastRoomState()
       this.persistState()
       return
@@ -876,6 +930,12 @@ export class RoomsDO implements DurableObject {
       if (session.role !== 'player') return
       if (!this.isHost(session)) return
       if (parsed.playerId === session.playerId) return
+      void this.logEvent({
+        level: 'info',
+        eventType: 'kick_player',
+        playerId: parsed.playerId,
+        accountId: session.accountId ?? null
+      })
       this.kickPlayer(parsed.playerId)
       this.broadcastRoomState()
       this.persistState()
@@ -1074,6 +1134,14 @@ export class RoomsDO implements DurableObject {
       this.doneByPlayer.set(session.playerId, false)
     }
     this.sessions.delete(ws)
+    if (session?.playerId) {
+      void this.logEvent({
+        level: 'info',
+        eventType: 'player_disconnect',
+        playerId: session.playerId,
+        accountId: session.accountId ?? null
+      })
+    }
     if (session?.playerId === this.hostId) {
       this.hostId = this.pickNewHost()
     }
@@ -1110,6 +1178,14 @@ export class RoomsDO implements DurableObject {
       this.doneByPlayer.set(session.playerId, false)
     }
     this.sessions.delete(ws)
+    if (session?.playerId) {
+      void this.logEvent({
+        level: 'error',
+        eventType: 'socket_error',
+        playerId: session.playerId,
+        accountId: session.accountId ?? null
+      })
+    }
     if (session?.playerId === this.hostId) {
       this.hostId = this.pickNewHost()
     }
@@ -1148,6 +1224,49 @@ export class RoomsDO implements DurableObject {
       audienceCode: this.audienceCode ?? undefined,
       sponsorSlot: this.sponsorSlot
     })
+  }
+
+  async logEvent(options: {
+    level: 'info' | 'warn' | 'error'
+    eventType: string
+    message?: string
+    playerId?: string | null
+    accountId?: string | null
+    meta?: Record<string, unknown>
+  }) {
+    if (!this.env.DB) return
+    const payload = {
+      id: crypto.randomUUID(),
+      level: options.level,
+      event_type: options.eventType,
+      message: options.message ?? null,
+      room_id: this.state.id.toString(),
+      player_id: options.playerId ?? null,
+      account_id: options.accountId ?? null,
+      meta_json: options.meta ? JSON.stringify(options.meta) : null,
+      created_at: Date.now()
+    }
+    try {
+      await this.env.DB
+        .prepare(
+          `INSERT INTO event_logs (id, level, event_type, message, room_id, player_id, account_id, meta_json, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .bind(
+          payload.id,
+          payload.level,
+          payload.event_type,
+          payload.message,
+          payload.room_id,
+          payload.player_id,
+          payload.account_id,
+          payload.meta_json,
+          payload.created_at
+        )
+        .run()
+    } catch {
+      return
+    }
   }
 
   getPlayers(): Player[] {
