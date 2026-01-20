@@ -358,7 +358,7 @@ export default {
   }
 }
 
-export class RoomsDO implements DurableObject {
+export class RoomsDOv2 implements DurableObject {
   state: DurableObjectState
   env: Env
   sessions: Map<WebSocket, Session>
