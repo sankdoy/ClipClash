@@ -99,6 +99,7 @@ type PersistedState = {
   hostKeyHash?: string
   roomVisibility?: 'public' | 'private'
   roomCreatedAt?: number
+  roomName?: string | null
 }
 
 type TwitchStreamResponse = {
@@ -138,6 +139,16 @@ const helloSchema = z.object({
   audienceCode: z.string().min(1).optional(),
   hostKey: z.string().min(1).optional(),
   visibility: z.enum(['public', 'private']).optional()
+})
+
+const setRoomVisibilitySchema = z.object({
+  type: z.literal('set_room_visibility'),
+  visibility: z.enum(['public', 'private'])
+})
+
+const setRoomNameSchema = z.object({
+  type: z.literal('set_room_name'),
+  name: z.string().min(1).max(32)
 })
 
 const updateNameSchema = z.object({
@@ -234,6 +245,8 @@ const clientMessageSchema = z.union([
   rpsSchema,
   reportSchema,
   setAudienceModeSchema,
+  setRoomVisibilitySchema,
+  setRoomNameSchema,
   setTwitchLoginSchema
 ])
 
@@ -380,6 +393,7 @@ export class RoomsDO implements DurableObject {
   hostKeyHash: string | null
   roomVisibility: 'public' | 'private'
   roomCreatedAt: number
+  roomName: string | null
   lastPublicSyncAt: number
   twitchToken: string | null
   twitchTokenExpiresAt: number | null
@@ -427,6 +441,7 @@ export class RoomsDO implements DurableObject {
     this.hostKeyHash = null
     this.roomVisibility = 'private'
     this.roomCreatedAt = Date.now()
+    this.roomName = null
     this.lastPublicSyncAt = 0
     this.twitchToken = null
     this.twitchTokenExpiresAt = null
@@ -491,6 +506,7 @@ export class RoomsDO implements DurableObject {
       this.hostKeyHash = stored.hostKeyHash ?? null
       this.roomVisibility = stored.roomVisibility ?? 'private'
       this.roomCreatedAt = stored.roomCreatedAt ?? Date.now()
+      this.roomName = stored.roomName ?? null
       const submissionsRaw = stored.submissions ?? {}
       this.submissions = new Map(
         Object.entries(submissionsRaw as Record<string, Submission[]>).map(([categoryId, items]) => [
@@ -614,13 +630,15 @@ export class RoomsDO implements DurableObject {
             categories: this.categories,
             scoreboard: this.getScoreboard(),
             history: this.history,
-          drafts: {},
-          reportCount: this.reports.length,
-          inviteCode: this.inviteCode ?? undefined,
-          audienceCode: this.audienceCode ?? undefined,
-          sponsorSlot: this.sponsorSlot
-        })
-      )
+            drafts: {},
+            reportCount: this.reports.length,
+            inviteCode: this.inviteCode ?? undefined,
+            audienceCode: this.audienceCode ?? undefined,
+            sponsorSlot: this.sponsorSlot,
+            roomVisibility: this.roomVisibility,
+            roomName: this.roomName ?? undefined
+          })
+        )
         this.broadcastRoomState()
         this.persistState()
         void this.logEvent({
@@ -780,7 +798,9 @@ export class RoomsDO implements DurableObject {
           reportCount: this.reports.length,
           inviteCode: this.inviteCode ?? undefined,
           audienceCode: this.audienceCode ?? undefined,
-          sponsorSlot: this.sponsorSlot
+          sponsorSlot: this.sponsorSlot,
+          roomVisibility: this.roomVisibility,
+          roomName: this.roomName ?? undefined
         })
       )
 
@@ -1020,6 +1040,32 @@ export class RoomsDO implements DurableObject {
       this.persistState()
     }
 
+    if (parsed.type === 'set_room_visibility') {
+      if (session.role !== 'player') return
+      if (!this.isHost(session)) return
+      this.roomVisibility = parsed.visibility
+      if (this.roomVisibility === 'public') {
+        void this.syncPublicRoom(true)
+      } else {
+        void this.removePublicRoom()
+      }
+      this.broadcastRoomState()
+      this.persistState()
+      return
+    }
+
+    if (parsed.type === 'set_room_name') {
+      if (session.role !== 'player') return
+      if (!this.isHost(session)) return
+      this.roomName = parsed.name.trim().slice(0, 32)
+      if (this.roomVisibility === 'public') {
+        void this.syncPublicRoom(true)
+      }
+      this.broadcastRoomState()
+      this.persistState()
+      return
+    }
+
     if (parsed.type === 'vote_submission') {
       if (this.phase !== 'rounds' || !this.round) return
       if (this.tiebreak) return
@@ -1249,7 +1295,9 @@ export class RoomsDO implements DurableObject {
       reportCount: this.reports.length,
       inviteCode: this.inviteCode ?? undefined,
       audienceCode: this.audienceCode ?? undefined,
-      sponsorSlot: this.sponsorSlot
+      sponsorSlot: this.sponsorSlot,
+      roomVisibility: this.roomVisibility,
+      roomName: this.roomName ?? undefined
     })
     if (this.roomVisibility === 'public') {
       void this.syncPublicRoom()
@@ -1261,6 +1309,9 @@ export class RoomsDO implements DurableObject {
   }
 
   getPublicRoomName() {
+    if (this.roomName && this.roomName.trim().length > 0) {
+      return this.roomName.trim()
+    }
     const code = this.inviteCode ?? this.state.id.toString()
     return `Room ${code}`
   }
@@ -1750,7 +1801,8 @@ export class RoomsDO implements DurableObject {
       audienceCode: this.audienceCode ?? undefined,
       hostKeyHash: this.hostKeyHash ?? undefined,
       roomVisibility: this.roomVisibility,
-      roomCreatedAt: this.roomCreatedAt
+      roomCreatedAt: this.roomCreatedAt,
+      roomName: this.roomName ?? undefined
     }
     await this.state.storage.put('room_state', payload)
   }

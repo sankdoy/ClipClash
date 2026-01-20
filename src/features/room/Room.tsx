@@ -118,6 +118,9 @@ export default function Room() {
   const [scoreboard, setScoreboard] = useState<ScoreboardEntry[]>([])
   const [history, setHistory] = useState<RoundHistoryEntry[]>([])
   const [sponsorSlot, setSponsorSlot] = useState<SponsorSlot | null>(null)
+  const [roomVisibility, setRoomVisibility] = useState<'public' | 'private'>('private')
+  const [roomName, setRoomName] = useState('')
+  const [roomNameDraft, setRoomNameDraft] = useState('')
   const [showSponsorOverlay, setShowSponsorOverlay] = useState(false)
   const [sponsorOverlaySeen, setSponsorOverlaySeen] = useState(false)
   const [displayName, setDisplayName] = useState('')
@@ -216,6 +219,9 @@ export default function Room() {
         setAudienceCode(data.audienceCode ?? null)
         setSponsorSlot(data.sponsorSlot ?? null)
         setTwitchLoginDraft(data.settings?.twitchLogin ?? '')
+        setRoomVisibility(data.roomVisibility ?? 'private')
+        setRoomName(data.roomName ?? '')
+        setRoomNameDraft(data.roomName ?? '')
       }
       if (data.type === 'room_state') {
         setPlayers(data.players)
@@ -232,6 +238,9 @@ export default function Room() {
         setAudienceCode(data.audienceCode ?? null)
         setSponsorSlot(data.sponsorSlot ?? null)
         setTwitchLoginDraft(data.settings?.twitchLogin ?? '')
+        setRoomVisibility(data.roomVisibility ?? 'private')
+        setRoomName(data.roomName ?? '')
+        setRoomNameDraft((prev) => (prev.trim().length ? prev : data.roomName ?? ''))
       }
       if (data.type === 'presence') {
         setPlayers(data.players)
@@ -669,6 +678,21 @@ export default function Room() {
     ws.send(JSON.stringify({ type: 'set_audience_mode', enabled }))
   }
 
+  const updateRoomVisibility = (visibility: 'public' | 'private') => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'set_room_visibility', visibility }))
+    setRoomVisibility(visibility)
+  }
+
+  const saveRoomName = () => {
+    const trimmed = roomNameDraft.trim()
+    if (!trimmed) return
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'set_room_name', name: trimmed }))
+  }
+
   const saveTwitchLogin = () => {
     const ws = socketRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return
@@ -1050,6 +1074,50 @@ export default function Room() {
                     </div>
                   ) : (
                     <div className="settings-list">
+                      <div className="setting-row">
+                        <div className="setting-info">
+                          <h4>Room visibility</h4>
+                          <p className="muted">Public rooms appear in the lobby list.</p>
+                        </div>
+                        <div className="setting-control">
+                          <div className="segment-tabs">
+                            <button
+                              className={`segment ${roomVisibility === 'public' ? 'active' : ''}`}
+                              onClick={() => updateRoomVisibility('public')}
+                              disabled={!isHost}
+                            >
+                              Public
+                            </button>
+                            <button
+                              className={`segment ${roomVisibility === 'private' ? 'active' : ''}`}
+                              onClick={() => updateRoomVisibility('private')}
+                              disabled={!isHost}
+                            >
+                              Private
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="setting-row">
+                        <div className="setting-info">
+                          <h4>Room name</h4>
+                          <p className="muted">Shown in public discovery.</p>
+                        </div>
+                        <div className="setting-control">
+                          <input
+                            type="text"
+                            placeholder="Room name"
+                            value={roomNameDraft}
+                            onChange={(e) => setRoomNameDraft(e.target.value)}
+                            className="input-inline"
+                            maxLength={32}
+                            disabled={!isHost}
+                          />
+                          <button className="btn outline" onClick={saveRoomName} disabled={!isHost || !roomNameDraft.trim()}>
+                            Save
+                          </button>
+                        </div>
+                      </div>
                       <div className="setting-row">
                         <div className="setting-info">
                           <h4>Audience Mode</h4>

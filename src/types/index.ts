@@ -129,6 +129,7 @@ export type ClientMessage =
       audienceCode?: string
       hostKey?: string
       role?: 'player' | 'audience'
+      visibility?: 'public' | 'private'
     }
   | { type: 'chat'; message: string }
   | { type: 'set_ready'; ready: boolean }
@@ -148,10 +149,12 @@ export type ClientMessage =
   | { type: 'rps_choice'; choice: RpsChoice }
   | { type: 'report'; messageId: string }
   | { type: 'set_audience_mode'; enabled: boolean }
+  | { type: 'set_room_visibility'; visibility: 'public' | 'private' }
+  | { type: 'set_room_name'; name: string }
 
 export type ServerMessage =
-  | { type: 'welcome'; sessionToken: string; playerId: string; roomId: string; phase: Phase; players: Player[]; chat: ChatMessage[]; settings: Settings; timer: TimerState; categories: Category[]; scoreboard: ScoreboardEntry[]; history: RoundHistoryEntry[]; drafts: DraftsByCategory; reportCount: number; inviteCode?: string; audienceCode?: string; sponsorSlot?: SponsorSlot | null }
-  | { type: 'room_state'; phase: Phase; players: Player[]; chat: ChatMessage[]; settings: Settings; timer: TimerState; categories: Category[]; scoreboard: ScoreboardEntry[]; history: RoundHistoryEntry[]; reportCount: number; inviteCode?: string; audienceCode?: string; sponsorSlot?: SponsorSlot | null }
+  | { type: 'welcome'; sessionToken: string; playerId: string; roomId: string; phase: Phase; players: Player[]; chat: ChatMessage[]; settings: Settings; timer: TimerState; categories: Category[]; scoreboard: ScoreboardEntry[]; history: RoundHistoryEntry[]; drafts: DraftsByCategory; reportCount: number; inviteCode?: string; audienceCode?: string; sponsorSlot?: SponsorSlot | null; roomVisibility?: 'public' | 'private'; roomName?: string }
+  | { type: 'room_state'; phase: Phase; players: Player[]; chat: ChatMessage[]; settings: Settings; timer: TimerState; categories: Category[]; scoreboard: ScoreboardEntry[]; history: RoundHistoryEntry[]; reportCount: number; inviteCode?: string; audienceCode?: string; sponsorSlot?: SponsorSlot | null; roomVisibility?: 'public' | 'private'; roomName?: string }
   | { type: 'presence'; players: Player[] }
   | { type: 'chat'; chat: ChatMessage }
   | { type: 'invite_code'; code: string }
