@@ -23,7 +23,7 @@ export interface Settings {
   voteTickSeconds: number
   voteThreshold: number
   audienceModeEnabled: boolean
-  twitchLogin?: string
+  streamerModeEnabled?: boolean
 }
 
 export interface Room {
@@ -149,6 +149,7 @@ export type ClientMessage =
   | { type: 'rps_choice'; choice: RpsChoice }
   | { type: 'report'; messageId: string }
   | { type: 'set_audience_mode'; enabled: boolean }
+  | { type: 'set_streamer_mode'; enabled: boolean }
   | { type: 'set_room_visibility'; visibility: 'public' | 'private' }
   | { type: 'set_room_name'; name: string }
 

@@ -148,7 +148,7 @@ export default function Room() {
   const [playbackOrder, setPlaybackOrder] = useState<RoundEntry[]>([])
   const [playbackIndex, setPlaybackIndex] = useState(0)
   const [playbackPause, setPlaybackPause] = useState(false)
-  const [twitchLoginDraft, setTwitchLoginDraft] = useState('')
+  const [streamerModeEnabled, setStreamerModeEnabled] = useState(false)
   const socketRef = useRef<WebSocket | null>(null)
   const timerRef = useRef<TimerState | null>(null)
   const submitTimersRef = useRef<Record<string, number>>({})
@@ -218,7 +218,7 @@ export default function Room() {
         setInviteCode(data.inviteCode ?? roomId ?? null)
         setAudienceCode(data.audienceCode ?? null)
         setSponsorSlot(data.sponsorSlot ?? null)
-        setTwitchLoginDraft(data.settings?.twitchLogin ?? '')
+        setStreamerModeEnabled(Boolean(data.settings?.streamerModeEnabled))
         setRoomVisibility(data.roomVisibility ?? 'private')
         setRoomName(data.roomName ?? '')
         setRoomNameDraft(data.roomName ?? '')
@@ -237,7 +237,7 @@ export default function Room() {
         setInviteCode(data.inviteCode ?? roomId ?? null)
         setAudienceCode(data.audienceCode ?? null)
         setSponsorSlot(data.sponsorSlot ?? null)
-        setTwitchLoginDraft(data.settings?.twitchLogin ?? '')
+        setStreamerModeEnabled(Boolean(data.settings?.streamerModeEnabled))
         setRoomVisibility(data.roomVisibility ?? 'private')
         setRoomName(data.roomName ?? '')
         setRoomNameDraft((prev) => (prev.trim().length ? prev : data.roomName ?? ''))
@@ -254,7 +254,7 @@ export default function Room() {
       }
       if (data.type === 'settings') {
         setSettings(data.settings)
-        setTwitchLoginDraft(data.settings?.twitchLogin ?? '')
+        setStreamerModeEnabled(Boolean(data.settings?.streamerModeEnabled))
       }
       if (data.type === 'round_start') {
         setRound(data.round)
@@ -693,10 +693,11 @@ export default function Room() {
     ws.send(JSON.stringify({ type: 'set_room_name', name: trimmed }))
   }
 
-  const saveTwitchLogin = () => {
+  const setStreamerMode = (enabled: boolean) => {
     const ws = socketRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return
-    ws.send(JSON.stringify({ type: 'set_twitch_login', login: twitchLoginDraft }))
+    ws.send(JSON.stringify({ type: 'set_streamer_mode', enabled }))
+    setStreamerModeEnabled(enabled)
   }
 
   const updateCategoryName = (id: string, name: string) => {
@@ -1183,19 +1184,16 @@ export default function Room() {
                       </div>
                       <div className="setting-row">
                         <div className="setting-info">
-                          <h4>Twitch login</h4>
-                          <p className="muted">Used for streamer sponsor eligibility checks.</p>
+                          <h4>Streamer host</h4>
+                          <p className="muted">Enable if this room is hosted by a streamer.</p>
                         </div>
                         <div className="setting-control">
-                          <input
-                            type="text"
-                            placeholder="twitch_login"
-                            value={twitchLoginDraft}
-                            onChange={(e) => setTwitchLoginDraft(e.target.value)}
-                            className="input-inline"
-                          />
-                          <button className="btn outline" onClick={saveTwitchLogin} disabled={!isHost}>
-                            Save
+                          <button
+                            className="btn outline"
+                            onClick={() => setStreamerMode(!streamerModeEnabled)}
+                            disabled={!isHost}
+                          >
+                            {streamerModeEnabled ? 'Disable' : 'Enable'}
                           </button>
                         </div>
                       </div>

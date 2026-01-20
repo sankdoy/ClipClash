@@ -68,6 +68,15 @@ type TokenRecord = {
   accountId?: string | null
 }
 
+type SponsorSelection = {
+  sponsorId: string
+  campaignId: string
+  reservedImpressions: number
+  gameId: string
+  isStreamer: boolean
+  bucket: 'A' | 'B'
+}
+
 type PersistedState = {
   phase: Phase
   settings: Settings
@@ -100,6 +109,7 @@ type PersistedState = {
   roomVisibility?: 'public' | 'private'
   roomCreatedAt?: number
   roomName?: string | null
+  sponsorSelection?: SponsorSelection | null
 }
 
 const defaultSettings: Settings = {
@@ -109,7 +119,7 @@ const defaultSettings: Settings = {
   voteTickSeconds: 5,
   voteThreshold: 0.8,
   audienceModeEnabled: false,
-  twitchLogin: ''
+  streamerModeEnabled: false
 }
 
 const defaultCategories = [
@@ -216,9 +226,9 @@ const setAudienceModeSchema = z.object({
   enabled: z.boolean()
 })
 
-const setTwitchLoginSchema = z.object({
-  type: z.literal('set_twitch_login'),
-  login: z.string().optional()
+const setStreamerModeSchema = z.object({
+  type: z.literal('set_streamer_mode'),
+  enabled: z.boolean()
 })
 
 const clientMessageSchema = z.union([
@@ -241,9 +251,9 @@ const clientMessageSchema = z.union([
   rpsSchema,
   reportSchema,
   setAudienceModeSchema,
+  setStreamerModeSchema,
   setRoomVisibilitySchema,
   setRoomNameSchema,
-  setTwitchLoginSchema
 ])
 
 
@@ -390,6 +400,7 @@ export class RoomsDOv2 implements DurableObject {
   roomVisibility: 'public' | 'private'
   roomCreatedAt: number
   roomName: string | null
+  sponsorSelection: SponsorSelection | null
   lastPublicSyncAt: number
 
   constructor(state: DurableObjectState, env: Env) {
@@ -436,6 +447,7 @@ export class RoomsDOv2 implements DurableObject {
     this.roomVisibility = 'private'
     this.roomCreatedAt = Date.now()
     this.roomName = null
+    this.sponsorSelection = null
     this.lastPublicSyncAt = 0
 
     this.state.blockConcurrencyWhile(async () => {
@@ -499,6 +511,7 @@ export class RoomsDOv2 implements DurableObject {
       this.roomVisibility = stored.roomVisibility ?? 'private'
       this.roomCreatedAt = stored.roomCreatedAt ?? Date.now()
       this.roomName = stored.roomName ?? null
+      this.sponsorSelection = stored.sponsorSelection ?? null
       const submissionsRaw = stored.submissions ?? {}
       this.submissions = new Map(
         Object.entries(submissionsRaw as Record<string, Submission[]>).map(([categoryId, items]) => [
@@ -1030,6 +1043,16 @@ export class RoomsDOv2 implements DurableObject {
       this.broadcast({ type: 'settings', settings: this.settings })
       this.broadcastRoomState()
       this.persistState()
+    }
+
+    if (parsed.type === 'set_streamer_mode') {
+      if (session.role !== 'player') return
+      if (!this.isHost(session)) return
+      this.settings = { ...this.settings, streamerModeEnabled: parsed.enabled }
+      this.broadcast({ type: 'settings', settings: this.settings })
+      this.broadcastRoomState()
+      this.persistState()
+      return
     }
 
     if (parsed.type === 'set_room_visibility') {
@@ -1593,6 +1616,9 @@ export class RoomsDOv2 implements DurableObject {
       this.phase = 'results'
       this.round = null
       this.tiebreak = null
+      if (this.sponsorSelection) {
+      void this.finalizeSponsorDebit()
+      }
       this.broadcast({ type: 'timer', phase: this.phase, timer: this.timer })
       this.broadcast({ type: 'scoreboard', scoreboard: this.getScoreboard(), history: this.history })
       this.recordMatchStats()
@@ -1794,12 +1820,16 @@ export class RoomsDOv2 implements DurableObject {
       hostKeyHash: this.hostKeyHash ?? undefined,
       roomVisibility: this.roomVisibility,
       roomCreatedAt: this.roomCreatedAt,
-      roomName: this.roomName ?? undefined
+      roomName: this.roomName ?? undefined,
+      sponsorSelection: this.sponsorSelection
     }
     await this.state.storage.put('room_state', payload)
   }
 
   resetMatch() {
+    if (this.sponsorSelection) {
+      void this.finalizeSponsorDebit()
+    }
     this.phase = 'lobby'
     for (const key of this.readyByPlayer.keys()) {
       this.readyByPlayer.set(key, false)
@@ -1809,6 +1839,7 @@ export class RoomsDOv2 implements DurableObject {
     }
     this.requiredDoneIds.clear()
     this.sponsorSlot = null
+    this.sponsorSelection = null
     this.timer = {
       targetMinutes: this.settings.defaultTime,
       huntRemainingSeconds: null,
@@ -1959,30 +1990,29 @@ export class RoomsDOv2 implements DurableObject {
     if (!this.env.DB) return buildDefaultSponsorSlot()
 
     const WEIGHT_CAP = 5000
-    const GUARANTEE_GAMES = 200
+    const SMALL_THRESHOLD = 2000
+    const FAIRNESS_SHARE = 0.1
+    const FAIRNESS_WINDOW = 100
+    const RESERVE_MIN = 3
     const now = Date.now()
-    const roomId = this.state.id.toString()
-    const playerCount = this.getConnectedPlayerCount()
-    const isStreamer = Boolean(this.settings.twitchLogin?.trim())
-    const impressions = playerCount + (isStreamer ? 1 : 0)
-    const minCredits = impressions <= 1 ? 1 : 2
-
-    await this.env.DB.prepare(
-      `UPDATE sponsor_balances
-       SET games_since_last_placement = games_since_last_placement + 1
-       WHERE credits_remaining > 0`
-    ).run()
+    const playerCount = this.players.size
+    const isStreamer = Boolean(this.settings.streamerModeEnabled)
+    const reserve = Math.max(1, playerCount > 0 ? playerCount : RESERVE_MIN)
 
     const candidates = await this.env.DB.prepare(
       `SELECT s.id as sponsor_id,
               s.name as sponsor_name,
               c.id as campaign_id,
               c.creative_url,
+              c.intro_asset_url,
+              c.results_asset_url,
               c.click_url,
               c.tagline,
               b.credits_remaining,
+              b.credits_spent_total,
               b.current_weight,
-              b.games_since_last_placement
+              b.games_since_last_placement,
+              b.last_shown_at
        FROM sponsors s
        JOIN sponsor_campaigns_v2 c ON c.sponsor_id = s.id AND c.status = 'active'
        JOIN sponsor_balances b ON b.sponsor_id = s.id
@@ -1990,18 +2020,23 @@ export class RoomsDOv2 implements DurableObject {
     ).all()
 
     const eligible = (candidates.results ?? [])
-      .map((row) => ({
-        sponsorId: String(row.sponsor_id),
-        sponsorName: String(row.sponsor_name ?? 'Sponsor'),
-        campaignId: String(row.campaign_id),
-        creativeUrl: String(row.creative_url ?? ''),
-        clickUrl: String(row.click_url ?? '/sponsor'),
-        tagline: String(row.tagline ?? ''),
-        creditsRemaining: Number(row.credits_remaining ?? 0),
-        currentWeight: Number(row.current_weight ?? 0),
-        gamesSinceLast: Number(row.games_since_last_placement ?? 0)
-      }))
-      .filter((row) => row.creditsRemaining >= Math.max(minCredits, impressions))
+      .map((row) => {
+        const creativeUrl = String(row.intro_asset_url ?? row.results_asset_url ?? row.creative_url ?? '')
+        return {
+          sponsorId: String(row.sponsor_id),
+          sponsorName: String(row.sponsor_name ?? 'Sponsor'),
+          campaignId: String(row.campaign_id),
+          creativeUrl,
+          clickUrl: String(row.click_url ?? '/sponsor'),
+          tagline: String(row.tagline ?? ''),
+          creditsRemaining: Number(row.credits_remaining ?? 0),
+          creditsSpentTotal: Number(row.credits_spent_total ?? 0),
+          currentWeight: Number(row.current_weight ?? 0),
+          gamesSinceLast: Number(row.games_since_last_placement ?? 0),
+          lastShownAt: row.last_shown_at === null || row.last_shown_at === undefined ? null : Number(row.last_shown_at)
+        }
+      })
+      .filter((row) => row.creditsRemaining >= reserve && row.creativeUrl.length > 0)
 
     if (eligible.length === 0) {
       return buildDefaultSponsorSlot()
@@ -2012,23 +2047,46 @@ export class RoomsDOv2 implements DurableObject {
     ).first()
     const lastSponsorId = typeof lastRow?.sponsor_id_selected === 'string' ? lastRow.sponsor_id_selected : null
 
-    const filterNoBackToBack = (list: typeof eligible) => {
+    const applyNoBackToBack = (list: typeof eligible) => {
       if (!lastSponsorId) return list
       const filtered = list.filter((row) => row.sponsorId !== lastSponsorId)
       return filtered.length > 0 ? filtered : list
     }
 
-    const guaranteeEligible = filterNoBackToBack(
-      eligible.filter((row) => row.gamesSinceLast >= GUARANTEE_GAMES)
+    const bucketAEligible = eligible.filter(
+      (row) => row.creditsSpentTotal === 0 || row.creditsRemaining <= SMALL_THRESHOLD
     )
 
-    let selected: typeof eligible[number] | null = null
+    let chooseBucketA = false
+    if (bucketAEligible.length > 0) {
+      const recent = await this.env.DB.prepare(
+        'SELECT reason FROM impression_ledger ORDER BY timestamp DESC LIMIT ?'
+      )
+        .bind(FAIRNESS_WINDOW)
+        .all()
+      const rows = recent.results ?? []
+      const bucketACount = rows.filter((row) => row.reason === 'bucket_a').length
+      const bucketALimit = Math.ceil(FAIRNESS_SHARE * FAIRNESS_WINDOW)
+      chooseBucketA = rows.length < FAIRNESS_WINDOW || bucketACount < bucketALimit
+    }
 
-    if (guaranteeEligible.length > 0) {
-      guaranteeEligible.sort((a, b) => b.gamesSinceLast - a.gamesSinceLast)
-      selected = guaranteeEligible[0]
-    } else {
-      const swrrPool = filterNoBackToBack(eligible)
+    let selected: typeof eligible[number] | null = null
+    let bucket: SponsorSelection['bucket'] = 'B'
+
+    if (chooseBucketA) {
+      const pool = applyNoBackToBack(bucketAEligible)
+      pool.sort((a, b) => {
+        if (a.gamesSinceLast !== b.gamesSinceLast) return b.gamesSinceLast - a.gamesSinceLast
+        const aShown = a.lastShownAt ?? 0
+        const bShown = b.lastShownAt ?? 0
+        return aShown - bShown
+      })
+      selected = pool[0] ?? null
+      bucket = 'A'
+    }
+
+    if (!selected) {
+      const swrrPool = applyNoBackToBack(eligible)
       let totalWeight = 0
       const scored = swrrPool.map((row) => {
         const weight = Math.min(row.creditsRemaining, WEIGHT_CAP)
@@ -2058,17 +2116,22 @@ export class RoomsDOv2 implements DurableObject {
       return buildDefaultSponsorSlot()
     }
 
-    const nextRemaining = Math.max(selected.creditsRemaining - impressions, 0)
+    await this.env.DB.prepare(
+      `UPDATE sponsor_balances
+       SET games_since_last_placement = games_since_last_placement + 1
+       WHERE credits_remaining > 0`
+    ).run()
+
+    const nextRemaining = Math.max(selected.creditsRemaining - reserve, 0)
     await this.env.DB.prepare(
       `UPDATE sponsor_balances
        SET credits_remaining = ?,
-           credits_spent_total = credits_spent_total + ?,
            games_since_last_placement = 0,
            last_shown_at = ?,
            updated_at = ?
        WHERE sponsor_id = ?`
     )
-      .bind(nextRemaining, impressions, now, now, selected.sponsorId)
+      .bind(nextRemaining, now, now, selected.sponsorId)
       .run()
 
     const gameId = crypto.randomUUID()
@@ -2080,22 +2143,14 @@ export class RoomsDOv2 implements DurableObject {
       .bind(gameId, now, isStreamer ? 1 : 0, playerCount, selected.sponsorId, 1)
       .run()
 
-    await this.env.DB.prepare(
-      `INSERT INTO impression_ledger
-        (id, sponsor_id, game_id, impressions_debited, players_count, streamer_mode, timestamp, reason)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-      .bind(
-        crypto.randomUUID(),
-        selected.sponsorId,
-        gameId,
-        impressions,
-        playerCount,
-        isStreamer ? 1 : 0,
-        now,
-        'sponsor_placement'
-      )
-      .run()
+    this.sponsorSelection = {
+      sponsorId: selected.sponsorId,
+      campaignId: selected.campaignId,
+      reservedImpressions: reserve,
+      gameId,
+      isStreamer,
+      bucket
+    }
 
     return {
       status: 'filled',
@@ -2104,6 +2159,62 @@ export class RoomsDOv2 implements DurableObject {
       clickUrl: selected.clickUrl,
       tagline: selected.tagline
     } as SponsorSlot
+  }
+
+  async finalizeSponsorDebit() {
+    if (!this.env.DB) return
+    if (!this.sponsorSelection) return
+
+    const { sponsorId, reservedImpressions, gameId, isStreamer, bucket } = this.sponsorSelection
+    const now = Date.now()
+    const playerCount = this.players.size
+    const impressions = playerCount + (isStreamer ? 1 : 0)
+    const delta = impressions - reservedImpressions
+
+    const balanceRow = await this.env.DB.prepare(
+      'SELECT credits_remaining FROM sponsor_balances WHERE sponsor_id = ?'
+    )
+      .bind(sponsorId)
+      .first()
+    const currentRemaining = Number(balanceRow?.credits_remaining ?? 0)
+    const nextRemaining = Math.max(currentRemaining - delta, 0)
+
+    await this.env.DB.prepare(
+      `UPDATE sponsor_balances
+       SET credits_remaining = ?,
+           credits_spent_total = credits_spent_total + ?,
+           updated_at = ?
+       WHERE sponsor_id = ?`
+    )
+      .bind(nextRemaining, impressions, now, sponsorId)
+      .run()
+
+    await this.env.DB.prepare(
+      `UPDATE games
+       SET player_count = ?, is_streamer = ?
+       WHERE id = ?`
+    )
+      .bind(playerCount, isStreamer ? 1 : 0, gameId)
+      .run()
+
+    await this.env.DB.prepare(
+      `INSERT INTO impression_ledger
+        (id, sponsor_id, game_id, impressions_debited, players_count, streamer_mode, timestamp, reason)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        crypto.randomUUID(),
+        sponsorId,
+        gameId,
+        impressions,
+        playerCount,
+        isStreamer ? 1 : 0,
+        now,
+        bucket === 'A' ? 'bucket_a' : 'bucket_b'
+      )
+      .run()
+
+    this.sponsorSelection = null
   }
 }
 
