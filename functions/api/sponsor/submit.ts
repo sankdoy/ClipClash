@@ -71,7 +71,7 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
     VALUES (?, ?, ?, ?)
     `
   )
-    .bind(sponsorId, brandName, 'pending', createdAt)
+    .bind(sponsorId, brandName, 'active', createdAt)
     .run()
 
   await db.prepare(
@@ -81,7 +81,7 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `
   )
-    .bind(campaignId, sponsorId, imageUrl, destinationUrl, tagline, 'pending', null, null)
+    .bind(campaignId, sponsorId, imageUrl, destinationUrl, tagline, 'active', null, null)
     .run()
 
   await db.prepare(
