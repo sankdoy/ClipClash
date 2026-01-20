@@ -24,16 +24,16 @@ export default function Home() {
   const navigate = useNavigate()
   const helpSlides = useMemo(() => ([
     {
-      title: 'Set the pace',
-      copy: 'Vote on the timer, then lock in categories before the hunt starts.'
+      title: 'Get the prompts',
+      copy: 'When the game starts, you get categories and a timer.'
     },
     {
       title: 'Hunt the clip',
-      copy: 'Find a TikTok that fits the prompt and submit before time runs out.'
+      copy: 'During the timer, find TikToks that best fit each category and submit them.'
     },
     {
       title: 'Vote + crown',
-      copy: 'Everyone votes each round. The top clip wins and the scoreboard updates.'
+      copy: 'When time ends, everyone votes on the best fitting TikTok.'
     }
   ]), [])
 
@@ -180,27 +180,26 @@ export default function Home() {
               ))}
             </div>
           </div>
-          <div className="panel-card">
-            <h3>Public rooms</h3>
-            <div className="room-list">
-              {roomsStatus === 'loading' && <p className="muted">Loading rooms...</p>}
-              {roomsStatus === 'error' && <p className="muted">Rooms unavailable.</p>}
-              {roomsStatus === 'ok' && publicRooms.length === 0 && (
-                <p className="muted">No public rooms yet.</p>
-              )}
-              {roomsStatus === 'ok' && publicRooms.map((room) => (
-                <button
-                  key={room.id}
-                  className="room-chip"
-                  onClick={() => navigate(`/room/${room.id}`)}
-                >
-                  <span>{room.name}</span>
-                  <span>{room.players}/{room.capacity}</span>
-                </button>
-              ))}
+          {(roomsStatus !== 'ok' || publicRooms.length > 0) && (
+            <div className="panel-card">
+              <h3>Public rooms</h3>
+              <div className="room-list">
+                {roomsStatus === 'loading' && <p className="muted">Loading rooms...</p>}
+                {roomsStatus === 'error' && <p className="muted">Rooms unavailable.</p>}
+                {roomsStatus === 'ok' && publicRooms.map((room) => (
+                  <button
+                    key={room.id}
+                    className="room-chip"
+                    onClick={() => navigate(`/room/${room.id}`)}
+                  >
+                    <span>{room.name}</span>
+                    <span>{room.players}/{room.capacity}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="muted">Status: {status}</p>
             </div>
-            <p className="muted">Status: {status}</p>
-          </div>
+          )}
         </aside>
       </section>
     </div>
