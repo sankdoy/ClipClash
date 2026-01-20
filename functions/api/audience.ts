@@ -1,4 +1,4 @@
-import { getSessionUser, json, Env } from './_helpers'
+import { getSessionUser, json, logEvent, Env } from './_helpers'
 import { createCheckoutSession, StripeEnv } from './_stripe'
 
 type BillingEnv = Env & StripeEnv
@@ -35,11 +35,28 @@ export async function onRequestPost({ request, env }: { request: Request; env: B
       ]
     })
     if (!session.url) {
+      await logEvent(env, {
+        level: 'error',
+        eventType: 'audience_checkout_error',
+        message: 'Stripe session missing url.',
+        accountId: user.id
+      })
       return json({ ok: false, error: 'Stripe session missing url.' }, { status: 500 })
     }
+    await logEvent(env, {
+      level: 'info',
+      eventType: 'audience_checkout_start',
+      accountId: user.id
+    })
     return json({ ok: true, url: session.url })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Stripe error'
+    await logEvent(env, {
+      level: 'error',
+      eventType: 'audience_checkout_error',
+      message,
+      accountId: user.id
+    })
     return json({ ok: false, error: message }, { status: 500 })
   }
 }

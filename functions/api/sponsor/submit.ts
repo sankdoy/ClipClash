@@ -1,5 +1,5 @@
 import type { Env } from '../_helpers'
-import { getDB } from '../../_lib/db'
+import { getDB, logEvent } from '../../_lib/db'
 import { badRequest, jsonOk } from '../../_lib/responses'
 import { validateBrandName, validateEmail, validateHttpsUrl, validateTagline } from '../../_lib/validate'
 
@@ -94,5 +94,10 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
     )
     .run()
 
+  await logEvent(env, {
+    level: 'info',
+    eventType: 'sponsor_submit',
+    meta: { campaignId: id }
+  })
   return jsonOk({ ok: true, id })
 }

@@ -1,4 +1,4 @@
-import { json, Env } from '../_helpers'
+import { json, logEvent, Env } from '../_helpers'
 
 function hashCode(code: string) {
   return crypto.subtle.digest('SHA-256', new TextEncoder().encode(code))
@@ -24,6 +24,11 @@ export async function onRequestPost({ request, env }: { request: Request; env: E
     .bind(email, hashHex, now.toISOString(), expires.toISOString())
     .run()
 
-  console.log('[auth] login code for', email, code)
+  await logEvent(env, {
+    level: 'info',
+    eventType: 'auth_request',
+    message: 'Login code issued.',
+    meta: { email }
+  })
   return json({ ok: true })
 }

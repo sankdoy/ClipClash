@@ -1,4 +1,5 @@
 import { isBlocked } from '../../shared/moderation'
+import { logEvent } from '../_lib/db'
 
 export type Env = {
   DB: D1Database
@@ -60,3 +61,5 @@ export async function getSessionUser(env: Env, request: Request) {
     .first()
   return result ?? null
 }
+
+export { logEvent }

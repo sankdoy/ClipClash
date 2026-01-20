@@ -1,4 +1,4 @@
-import { clearCookie, json, Env, getCookie } from '../_helpers'
+import { clearCookie, json, logEvent, Env, getCookie } from '../_helpers'
 
 export async function onRequestPost({ request, env }: { request: Request; env: Env }) {
   const token = getCookie(request.headers, 'cc_session')
@@ -7,5 +7,9 @@ export async function onRequestPost({ request, env }: { request: Request; env: E
   }
   const headers = new Headers()
   headers.append('Set-Cookie', clearCookie('cc_session'))
+  await logEvent(env, {
+    level: 'info',
+    eventType: 'auth_logout'
+  })
   return json({ ok: true }, { headers })
 }

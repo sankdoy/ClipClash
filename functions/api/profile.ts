@@ -1,4 +1,4 @@
-import { getSessionUser, isValidUsername, json, Env } from './_helpers'
+import { getSessionUser, isValidUsername, json, logEvent, Env } from './_helpers'
 import { isBlocked } from '../../shared/moderation'
 
 export async function onRequestGet({ request, env }: { request: Request; env: Env }) {
@@ -44,5 +44,10 @@ export async function onRequestPut({ request, env }: { request: Request; env: En
     )
     .run()
 
+  await logEvent(env, {
+    level: 'info',
+    eventType: 'profile_update',
+    accountId: user.id
+  })
   return json({ ok: true })
 }

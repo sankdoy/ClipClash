@@ -1,4 +1,5 @@
 import { jsonOk } from '../../_lib/responses'
+import { logEvent } from '../../_lib/db'
 import { verifyStripeSignature } from '../_stripe'
 
 type Env = {
@@ -23,6 +24,11 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
   if (!bypass) {
     const valid = await verifyStripeSignature(payload, signature, env.STRIPE_WEBHOOK_SECRET)
     if (!valid) {
+      await logEvent(env, {
+        level: 'warn',
+        eventType: 'stripe_webhook_invalid_signature',
+        message: 'Invalid signature.'
+      })
       return jsonOk({ error: 'Invalid signature' }, { status: 400 })
     }
   }
@@ -31,6 +37,11 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
   try {
     event = JSON.parse(payload) as { id?: string; type?: string }
   } catch {
+    await logEvent(env, {
+      level: 'warn',
+      eventType: 'stripe_webhook_invalid_payload',
+      message: 'Invalid JSON payload.'
+    })
     return jsonOk({ error: 'Invalid payload' }, { status: 400 })
   }
 
@@ -49,6 +60,12 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
     const now = new Date().toISOString()
 
     if (!checkoutSessionId || !Number.isFinite(amountCents)) {
+      await logEvent(env, {
+        level: 'warn',
+        eventType: 'stripe_webhook_missing_session',
+        message: 'Missing session details.',
+        accountId: userId ?? null
+      })
       return jsonOk({ error: 'Missing session details' }, { status: 400 })
     }
 
@@ -117,8 +134,23 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
         .run()
     }
 
+    await logEvent(env, {
+      level: 'info',
+      eventType: 'stripe_checkout_completed',
+      accountId: userId ?? null,
+      meta: {
+        kind,
+        amountCents,
+        checkoutSessionId
+      }
+    })
     return jsonOk({ received: true, eventId: event.id })
   }
 
+  await logEvent(env, {
+    level: 'info',
+    eventType: 'stripe_event_ignored',
+    meta: { type: event.type ?? 'unknown' }
+  })
   return jsonOk({ received: true, ignored: event.type ?? 'unknown' })
 }

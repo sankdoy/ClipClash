@@ -1,4 +1,4 @@
-import { getSessionUser, json, Env } from './_helpers'
+import { getSessionUser, json, logEvent, Env } from './_helpers'
 import { ThemeMode, themePacks } from '../../src/theme'
 
 const allowedThemes = new Set(themePacks.map((pack) => pack.id))
@@ -36,5 +36,11 @@ export async function onRequestPut({ request, env }: { request: Request; env: En
     .bind(user.id, theme, mode as ThemeMode, new Date().toISOString())
     .run()
 
+  await logEvent(env, {
+    level: 'info',
+    eventType: 'settings_update',
+    accountId: user.id,
+    meta: { theme, mode }
+  })
   return json({ ok: true })
 }

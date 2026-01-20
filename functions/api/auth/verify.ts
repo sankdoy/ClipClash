@@ -1,4 +1,4 @@
-import { clearCookie, json, setCookie, Env } from '../_helpers'
+import { clearCookie, json, logEvent, setCookie, Env } from '../_helpers'
 import { isBlocked } from '../../../shared/moderation'
 
 function hashCode(code: string) {
@@ -29,6 +29,12 @@ export async function onRequestPost({ request, env }: { request: Request; env: E
   const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : ''
   const code = typeof body?.code === 'string' ? body.code.trim() : ''
   if (!email || !code) {
+    await logEvent(env, {
+      level: 'warn',
+      eventType: 'auth_verify_invalid',
+      message: 'Invalid verify payload.',
+      meta: { email }
+    })
     return json({ ok: false, error: 'Invalid request.' }, { status: 400 })
   }
 
@@ -38,12 +44,24 @@ export async function onRequestPost({ request, env }: { request: Request; env: E
     .bind(email)
     .first()
   if (!record || record.expires_at < new Date().toISOString()) {
+    await logEvent(env, {
+      level: 'warn',
+      eventType: 'auth_verify_expired',
+      message: 'Code expired.',
+      meta: { email }
+    })
     return json({ ok: false, error: 'Code expired.' }, { status: 400 })
   }
 
   const hash = await hashCode(code)
   const hashHex = Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('')
   if (hashHex !== record.code_hash) {
+    await logEvent(env, {
+      level: 'warn',
+      eventType: 'auth_verify_mismatch',
+      message: 'Invalid code.',
+      meta: { email }
+    })
     return json({ ok: false, error: 'Invalid code.' }, { status: 400 })
   }
 
@@ -78,5 +96,10 @@ export async function onRequestPost({ request, env }: { request: Request; env: E
 
   const headers = new Headers()
   headers.append('Set-Cookie', setCookie('cc_session', token, { maxAge: 60 * 60 * 24 * 30 }))
+  await logEvent(env, {
+    level: 'info',
+    eventType: 'auth_verify_success',
+    accountId: user.id
+  })
   return json({ ok: true, user }, { headers })
 }
