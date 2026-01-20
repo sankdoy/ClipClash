@@ -106,19 +106,19 @@ export default function Sponsor() {
           <div>
             <h3>How it works</h3>
             <p className="muted">
-              One impression is one player seeing your sponsor in a game.
+              1 credit = 1 impression. An impression is counted once per player per game.
             </p>
           </div>
           <div>
             <h3>Pricing</h3>
             <p className="muted">
-              Credits are debited per player, per game, shown in both intro + results.
+              Credits are debited per player, per game (intro + results bundled).
             </p>
           </div>
           <div>
             <h3>Multiple buyers</h3>
             <p className="muted">
-              We run a sponsor queue: first paid, first served, applied to the next available games.
+              Sponsors rotate fairly based on remaining credits, so small buys still get shown.
             </p>
           </div>
         </div>
