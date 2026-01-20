@@ -9,17 +9,13 @@ type FormState = {
 }
 
 type BundlePrice = {
-  games?: number
-  credits?: number
+  credits: number
   price_usd: number
 }
 
 type TierResponse = {
-  pricePerViewer: number
-  pricePerGame: number
-  standardBundles: BundlePrice[]
-  streamerCreditBundles: BundlePrice[]
-  top250UpdatedAt: number | null
+  pricePerCredit: number
+  creditBundles: BundlePrice[]
 }
 
 const initialForm: FormState = {
@@ -35,8 +31,7 @@ export default function Sponsor() {
   const [status, setStatus] = useState<string | null>(null)
   const [tiers, setTiers] = useState<TierResponse | null>(null)
   const [loading, setLoading] = useState(true)
-  const [standardBundles, setStandardBundles] = useState<Record<number, number>>({})
-  const [streamerBundles, setStreamerBundles] = useState<Record<number, number>>({})
+  const [creditBundles, setCreditBundles] = useState<Record<number, number>>({})
 
   const updateField = (key: keyof FormState, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -63,11 +58,8 @@ export default function Sponsor() {
       setStatus('Destination URL must start with https://')
       return
     }
-    const standardGames = Object.entries(standardBundles).reduce((sum, [games, count]) => (
-      sum + Number(games) * count
-    ), 0)
-    const streamerViewerCredits = Object.entries(streamerBundles).reduce((sum, [credits, count]) => (
-      sum + Number(credits) * count
+    const credits = Object.entries(creditBundles).reduce((sum, [bundle, count]) => (
+      sum + Number(bundle) * count
     ), 0)
     const payload = {
       brandName: form.sponsorName,
@@ -75,14 +67,9 @@ export default function Sponsor() {
       clickUrl: form.clickUrl,
       tagline: form.tagline,
       imageUrl: form.imageUrl,
-      standardGames,
-      streamerViewerCredits,
+      credits,
       purchased: {
-        standardBundles: Object.entries(standardBundles).map(([games, count]) => ({
-          games: Number(games),
-          count
-        })),
-        streamerBundles: Object.entries(streamerBundles).map(([credits, count]) => ({
+        creditBundles: Object.entries(creditBundles).map(([credits, count]) => ({
           credits: Number(credits),
           count
         }))
@@ -96,23 +83,15 @@ export default function Sponsor() {
     setStatus(res.ok ? 'Thanks, we will contact you.' : 'Submission failed.')
     if (res.ok) {
       setForm(initialForm)
-      setStandardBundles({})
-      setStreamerBundles({})
+      setCreditBundles({})
     }
   }
 
-  const isCacheReady = Boolean(tiers?.top250UpdatedAt)
-  const totalStandardGames = Object.entries(standardBundles).reduce((sum, [games, count]) => (
-    sum + Number(games) * count
-  ), 0)
-  const totalStreamerCredits = Object.entries(streamerBundles).reduce((sum, [credits, count]) => (
+  const totalCredits = Object.entries(creditBundles).reduce((sum, [credits, count]) => (
     sum + Number(credits) * count
   ), 0)
-  const standardTotalUsd = tiers
-    ? Number((totalStandardGames * (tiers.pricePerGame ?? 0)).toFixed(2))
-    : 0
-  const streamerTotalUsd = tiers
-    ? Number((totalStreamerCredits * (tiers.pricePerViewer ?? 0)).toFixed(2))
+  const totalUsd = tiers
+    ? Number((totalCredits * (tiers.pricePerCredit ?? 0)).toFixed(2))
     : 0
 
   return (
@@ -127,14 +106,13 @@ export default function Sponsor() {
           <div>
             <h3>How it works</h3>
             <p className="muted">
-              Sponsor slots are applied per game. Once your spot is queued, it will be
-              used on the next available game(s).
+              One impression is one player seeing your sponsor in a game.
             </p>
           </div>
           <div>
             <h3>Pricing</h3>
             <p className="muted">
-              Standard games use 3 impressions per game. Streamer games consume live viewer credits.
+              Credits are debited per player, per game, shown in both intro + results.
             </p>
           </div>
           <div>
@@ -151,82 +129,36 @@ export default function Sponsor() {
         ) : (
           <div className="pricing-grid">
             <div className="panel-card">
-              <h3>Standard bundles</h3>
-              <p className="muted">Each game counts as 3 impressions.</p>
+              <h3>Credit bundles</h3>
+              <p className="muted">1 credit = 1 player impression.</p>
               <div className="bundle-list">
-                {tiers.standardBundles.map((bundle) => (
-                  <div key={bundle.games} className="bundle-row">
-                    <div>
-                      <strong>{bundle.games} games</strong>
-                      <p className="muted">${bundle.price_usd.toFixed(2)}</p>
-                    </div>
-                    <div className="bundle-controls">
-                      <button
-                        className="btn ghost"
-                        type="button"
-                        onClick={() =>
-                          setStandardBundles((prev) => ({
-                            ...prev,
-                            [bundle.games!]: Math.max(0, (prev[bundle.games!] ?? 0) - 1)
-                          }))
-                        }
-                      >
-                        -
-                      </button>
-                      <span>{standardBundles[bundle.games!] ?? 0}</span>
-                      <button
-                        className="btn outline"
-                        type="button"
-                        onClick={() =>
-                          setStandardBundles((prev) => ({
-                            ...prev,
-                            [bundle.games!]: (prev[bundle.games!] ?? 0) + 1
-                          }))
-                        }
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="panel-card">
-              <h3>Streamer viewer credits</h3>
-              <p className="muted">Consumed when host is live in Top 250. 10% AFK haircut.</p>
-              {!isCacheReady && (
-                <p className="muted">Top 250 cache warming up. Streamer credits unavailable.</p>
-              )}
-              <div className="bundle-list">
-                {tiers.streamerCreditBundles.map((bundle) => (
+                {tiers.creditBundles.map((bundle) => (
                   <div key={bundle.credits} className="bundle-row">
                     <div>
-                      <strong>{Number(bundle.credits).toLocaleString()} credits</strong>
+                      <strong>{bundle.credits.toLocaleString()} credits</strong>
                       <p className="muted">${bundle.price_usd.toFixed(2)}</p>
                     </div>
                     <div className="bundle-controls">
                       <button
                         className="btn ghost"
                         type="button"
-                        disabled={!isCacheReady}
                         onClick={() =>
-                          setStreamerBundles((prev) => ({
+                          setCreditBundles((prev) => ({
                             ...prev,
-                            [bundle.credits!]: Math.max(0, (prev[bundle.credits!] ?? 0) - 1)
+                            [bundle.credits]: Math.max(0, (prev[bundle.credits] ?? 0) - 1)
                           }))
                         }
                       >
                         -
                       </button>
-                      <span>{streamerBundles[bundle.credits!] ?? 0}</span>
+                      <span>{creditBundles[bundle.credits] ?? 0}</span>
                       <button
                         className="btn outline"
                         type="button"
-                        disabled={!isCacheReady}
                         onClick={() =>
-                          setStreamerBundles((prev) => ({
+                          setCreditBundles((prev) => ({
                             ...prev,
-                            [bundle.credits!]: (prev[bundle.credits!] ?? 0) + 1
+                            [bundle.credits]: (prev[bundle.credits] ?? 0) + 1
                           }))
                         }
                       >
@@ -245,16 +177,8 @@ export default function Sponsor() {
         <h3>Inquiry form</h3>
         <div className="cart-summary">
           <div>
-            <strong>Standard games</strong>
-            <p className="muted">{totalStandardGames} games · ${standardTotalUsd.toFixed(2)}</p>
-          </div>
-          <div>
-            <strong>Streamer credits</strong>
-            <p className="muted">{totalStreamerCredits.toLocaleString()} credits · ${streamerTotalUsd.toFixed(2)}</p>
-          </div>
-          <div>
-            <strong>Total</strong>
-            <p className="muted">${(standardTotalUsd + streamerTotalUsd).toFixed(2)}</p>
+            <strong>Credits</strong>
+            <p className="muted">{totalCredits.toLocaleString()} credits · ${totalUsd.toFixed(2)}</p>
           </div>
         </div>
         <form onSubmit={submit} className="form-stack">

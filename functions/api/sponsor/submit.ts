@@ -4,8 +4,7 @@ import { badRequest, jsonOk } from '../../_lib/responses'
 import { validateBrandName, validateEmail, validateHttpsUrl, validateTagline } from '../../_lib/validate'
 
 type PurchasePayload = {
-  standardBundles?: Array<{ games: number; count: number }>
-  streamerBundles?: Array<{ credits: number; count: number }>
+  creditBundles?: Array<{ credits: number; count: number }>
 }
 
 export async function onRequest({ env, request }: { env: Env; request: Request }) {
@@ -18,8 +17,7 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
   let destinationUrl = ''
   let tagline = ''
   let imageUrl = ''
-  let standardGames = 0
-  let streamerViewerCredits = 0
+  let credits = 0
   let purchased: PurchasePayload = {}
   let notes: string | null = null
 
@@ -30,8 +28,7 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
     destinationUrl = String(body?.clickUrl ?? '').trim()
     tagline = String(body?.tagline ?? '').trim()
     imageUrl = String(body?.imageUrl ?? '').trim()
-    standardGames = Number(body?.standardGames ?? 0)
-    streamerViewerCredits = Number(body?.streamerViewerCredits ?? 0)
+    credits = Number(body?.credits ?? 0)
     purchased = (body?.purchased ?? {}) as PurchasePayload
     notes = String(body?.notes ?? '').trim() || null
   } else {
@@ -41,8 +38,7 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
     destinationUrl = String(formData.get('destination_url') ?? '').trim()
     tagline = String(formData.get('tagline') ?? '').trim()
     imageUrl = String(formData.get('image_url') ?? '').trim()
-    standardGames = Number(formData.get('standard_games') ?? 0)
-    streamerViewerCredits = Number(formData.get('streamer_viewer_credits') ?? 0)
+    credits = Number(formData.get('credits') ?? 0)
     notes = String(formData.get('notes') ?? '').trim() || null
   }
 
@@ -61,43 +57,56 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
   if (!validateEmail(contactEmail)) {
     return badRequest('Contact email required')
   }
-  if (!Number.isFinite(standardGames) || standardGames < 0) {
-    return badRequest('Invalid standard games count')
-  }
-  if (!Number.isFinite(streamerViewerCredits) || streamerViewerCredits < 0) {
-    return badRequest('Invalid streamer credits count')
+  if (!Number.isFinite(credits) || credits <= 0) {
+    return badRequest('Invalid credit count')
   }
 
-  const id = crypto.randomUUID()
+  const sponsorId = crypto.randomUUID()
+  const campaignId = crypto.randomUUID()
   const createdAt = Date.now()
   const db = getDB(env)
   await db.prepare(
     `
-    INSERT INTO sponsor_campaigns
-      (id, created_at, brand_name, click_url, tagline, image_url, status, standard_games_remaining,
-       streamer_viewer_credits_remaining, purchased_json, contact_email)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO sponsors (id, name, status, created_at)
+    VALUES (?, ?, ?, ?)
+    `
+  )
+    .bind(sponsorId, brandName, 'pending', createdAt)
+    .run()
+
+  await db.prepare(
+    `
+    INSERT INTO sponsor_campaigns_v2
+      (id, sponsor_id, creative_url, click_url, tagline, status, starts_at, ends_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `
+  )
+    .bind(campaignId, sponsorId, imageUrl, destinationUrl, tagline, 'pending', null, null)
+    .run()
+
+  await db.prepare(
+    `
+    INSERT INTO sponsor_balances
+      (sponsor_id, credits_remaining, credits_purchased_total, credits_spent_total, current_weight, games_since_last_placement, last_shown_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `
   )
     .bind(
-      id,
-      createdAt,
-      brandName,
-      destinationUrl,
-      tagline,
-      imageUrl,
-      'pending',
-      Math.floor(standardGames),
-      Math.floor(streamerViewerCredits),
-      JSON.stringify(purchased ?? {}),
-      contactEmail
+      sponsorId,
+      Math.floor(credits),
+      Math.floor(credits),
+      0,
+      0,
+      0,
+      null,
+      createdAt
     )
     .run()
 
   await logEvent(env, {
     level: 'info',
     eventType: 'sponsor_submit',
-    meta: { campaignId: id }
+    meta: { sponsorId, campaignId, credits: Math.floor(credits) }
   })
-  return jsonOk({ ok: true, id })
+  return jsonOk({ ok: true, sponsorId, campaignId })
 }
