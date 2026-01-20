@@ -169,6 +169,8 @@ export default function Room() {
         playerLabel && !storedName && !displayName ? `Player ${playerLabel}` : null
       const inviteFromUrl = new URLSearchParams(window.location.search).get('code') ?? undefined
       const audienceFromUrl = new URLSearchParams(window.location.search).get('audienceCode') ?? undefined
+      const publicFlag = new URLSearchParams(window.location.search).get('public')
+      const visibility = publicFlag === '1' ? 'public' : 'private'
       if (autoName) {
         setDisplayName(autoName)
       }
@@ -181,7 +183,8 @@ export default function Room() {
           sessionToken: storedToken ?? undefined,
           inviteCode: inviteFromUrl ?? undefined,
           hostKey: hostKeyFromUrl ?? undefined,
-          audienceCode: audienceFromUrl ?? undefined
+          audienceCode: audienceFromUrl ?? undefined,
+          visibility: hostKeyFromUrl ? visibility : undefined
         })
       )
       if (autoName) {

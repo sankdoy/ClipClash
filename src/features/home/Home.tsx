@@ -41,7 +41,8 @@ export default function Home() {
     const newRoomId = makeRoomId()
     const hostKey = makeHostKey()
     setRoomCode(newRoomId)
-    navigate(`/room/${newRoomId}?hostKey=${hostKey}`)
+    const visibility = roomVisibility === 'public' ? '&public=1' : ''
+    navigate(`/room/${newRoomId}?hostKey=${hostKey}${visibility}`)
   }
 
   const joinRoom = () => {
