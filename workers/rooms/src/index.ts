@@ -26,8 +26,6 @@ import { isTikTokUrl } from '../../../shared/tiktok'
 export interface Env {
   ROOMS_DO: DurableObjectNamespace
   DB?: D1Database
-  TWITCH_CLIENT_ID?: string
-  TWITCH_CLIENT_SECRET?: string
 }
 
 type Session = {
