@@ -3,10 +3,6 @@ import { getDB, logEvent } from '../../_lib/db'
 import { badRequest, jsonOk } from '../../_lib/responses'
 import { validateBrandName, validateEmail, validateHttpsUrl, validateTagline } from '../../_lib/validate'
 
-type PurchasePayload = {
-  creditBundles?: Array<{ credits: number; count: number }>
-}
-
 export async function onRequest({ env, request }: { env: Env; request: Request }) {
   if (request.method !== 'POST') {
     return new Response('Method Not Allowed', { status: 405 })
@@ -18,8 +14,6 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
   let tagline = ''
   let imageUrl = ''
   let credits = 0
-  let purchased: PurchasePayload = {}
-  let notes: string | null = null
 
   if (contentType.includes('application/json')) {
     const body = await request.json().catch(() => null)
@@ -29,8 +23,6 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
     tagline = String(body?.tagline ?? '').trim()
     imageUrl = String(body?.imageUrl ?? '').trim()
     credits = Number(body?.credits ?? 0)
-    purchased = (body?.purchased ?? {}) as PurchasePayload
-    notes = String(body?.notes ?? '').trim() || null
   } else {
     const formData = await request.formData()
     brandName = String(formData.get('brand_name') ?? '').trim()
@@ -39,7 +31,6 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
     tagline = String(formData.get('tagline') ?? '').trim()
     imageUrl = String(formData.get('image_url') ?? '').trim()
     credits = Number(formData.get('credits') ?? 0)
-    notes = String(formData.get('notes') ?? '').trim() || null
   }
 
   if (!validateHttpsUrl(destinationUrl)) {
@@ -77,11 +68,22 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
   await db.prepare(
     `
     INSERT INTO sponsor_campaigns_v2
-      (id, sponsor_id, creative_url, click_url, tagline, status, starts_at, ends_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      (id, sponsor_id, creative_url, intro_asset_url, results_asset_url, click_url, tagline, status, starts_at, ends_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   )
-    .bind(campaignId, sponsorId, imageUrl, destinationUrl, tagline, 'active', null, null)
+    .bind(
+      campaignId,
+      sponsorId,
+      imageUrl,
+      imageUrl,
+      imageUrl,
+      destinationUrl,
+      tagline,
+      'active',
+      null,
+      null
+    )
     .run()
 
   await db.prepare(
