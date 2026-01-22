@@ -12,7 +12,7 @@ Tech stack (realtime)
 - Durable Objects + WebSockets for realtime rooms/state. Durable Objects are deployed as a separate Worker and then bound into Pages via dashboard or Wrangler.
 
 Game flow
-- Players: 2–10
+- Players: 3–10
 - Lobby types: public + private rooms
 - Flow:
   A) Players join a room and see a list of categories (examples: cutest, funniest, randomest, most satisfying, cringiest, most out of pocket, most boring, weirdest)
