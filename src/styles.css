@@ -971,6 +971,8 @@ body{
 		align-items:center;
 		justify-content:center;
 		z-index:30;
+		/* Safety: even if the overlay sticks around due to a bug, don’t trap clicks. */
+		pointer-events:none;
 	}
 	.sponsor-stinger{
 		background:var(--card);

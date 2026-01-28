@@ -527,6 +527,19 @@ export class RoomsDOv2 implements DurableObject {
       return new Response('Expected websocket', { status: 426 })
     }
 
+    // Room id (the URL path segment) is the only join code.
+    // This keeps the system simple: roomId === inviteCode.
+    try {
+      const url = new URL(request.url)
+      const parts = url.pathname.split('/').filter(Boolean)
+      const roomCodeFromPath = parts[0] === 'room' ? parts[1] : parts[0]
+      if (roomCodeFromPath && !this.inviteCode) {
+        this.inviteCode = roomCodeFromPath
+      }
+    } catch {
+      // ignore
+    }
+
     const account = await resolveAccount(this.env, request)
     const pair = new WebSocketPair()
     const client = pair[0]
@@ -729,24 +742,10 @@ export class RoomsDOv2 implements DurableObject {
         this.tokenToPlayerId.set(sessionToken, { playerId, accountId: session.accountId })
       }
 
+      // Room id is the join code. (No separate invite code validation.)
       if (!this.inviteCode) {
-        this.inviteCode = generateInviteCode()
-      }
-      if (
-        resolved.isNew &&
-        this.inviteCode &&
-        parsed.inviteCode?.trim() !== this.inviteCode &&
-        this.players.size > 0 &&
-        !hostKeyVerified
-      ) {
-        ws.send(toServerMessage({ type: 'error', message: 'Invalid room code.' }))
-        ws.close(1000, 'Invalid room code')
-        void this.logEvent({
-          level: 'warn',
-          eventType: 'invite_reject',
-          message: 'Invalid room code.'
-        })
-        return
+        // Fallback: should be set from the websocket URL path in fetch().
+        this.inviteCode = this.state.id.toString()
       }
 
       const existingRecord = this.players.get(playerId)
@@ -1062,13 +1061,7 @@ export class RoomsDOv2 implements DurableObject {
       return
     }
 
-    if (parsed.type === 'rotate_invite') {
-      if (!this.isHost(session)) return
-      this.inviteCode = generateInviteCode()
-      this.broadcast({ type: 'invite_code', code: this.inviteCode })
-      this.persistState()
-      return
-    }
+    // rotate_invite removed: roomId is the join code.
 
     if (parsed.type === 'update_categories') {
       if (session.role !== 'player') return
@@ -1447,7 +1440,7 @@ export class RoomsDOv2 implements DurableObject {
          last_seen_at=excluded.last_seen_at`
     )
       .bind(
-        this.state.id.toString(),
+        this.inviteCode ?? this.state.id.toString(),
         name,
         playersCount,
         roomCapacity,
@@ -1461,7 +1454,7 @@ export class RoomsDOv2 implements DurableObject {
   async removePublicRoom() {
     if (!this.env.DB) return
     await this.env.DB.prepare('DELETE FROM public_rooms WHERE room_id = ?')
-      .bind(this.state.id.toString())
+      .bind(this.inviteCode ?? this.state.id.toString())
       .run()
   }
 
@@ -1479,7 +1472,7 @@ export class RoomsDOv2 implements DurableObject {
       level: options.level,
       event_type: options.eventType,
       message: options.message ?? null,
-      room_id: this.state.id.toString(),
+      room_id: this.inviteCode ?? this.state.id.toString(),
       player_id: options.playerId ?? null,
       account_id: options.accountId ?? null,
       meta_json: options.meta ? JSON.stringify(options.meta) : null,

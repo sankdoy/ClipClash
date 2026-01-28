@@ -17,6 +17,7 @@ function makeHostKey() {
 export default function Home() {
   const [status, setStatus] = useState<string>('loading')
   const [roomCode, setRoomCode] = useState('')
+  const [joinError, setJoinError] = useState<string | null>(null)
   const [publicRooms, setPublicRooms] = useState<Array<{ id: string; name: string; players: number; capacity: number }>>([])
   const [roomsStatus, setRoomsStatus] = useState<'loading' | 'ok' | 'error'>('loading')
   const [roomVisibility, setRoomVisibility] = useState<'public' | 'private'>('public')
@@ -48,14 +49,31 @@ export default function Home() {
   const joinRoom = () => {
     const trimmed = roomCode.trim()
     if (!trimmed) return
+
+    setJoinError(null)
+
+    // Accept a full invite URL.
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
       window.location.assign(trimmed)
       return
     }
+
+    // Accept a site-relative room path.
     if (trimmed.startsWith('/room/')) {
       window.location.assign(trimmed)
       return
     }
+
+    // IMPORTANT:
+    // The backend will happily create a new room for *any* string.
+    // If we allow arbitrary input here, users will accidentally create “random rooms”.
+    // So we only accept known room id format.
+    const isRoomId = /^room-[a-z0-9]{6}$/i.test(trimmed)
+    if (!isRoomId) {
+      setJoinError('Paste a full invite link, or a room code like “room-abc123”.')
+      return
+    }
+
     navigate(`/room/${trimmed}`)
   }
 
@@ -135,11 +153,15 @@ export default function Home() {
               Room code
               <input
                 type="text"
-                placeholder="e.g. glow-3"
+                placeholder="e.g. room-abc123 (or paste invite link)"
                 value={roomCode}
-                onChange={(e) => setRoomCode(e.target.value)}
+                onChange={(e) => {
+                  setRoomCode(e.target.value)
+                  if (joinError) setJoinError(null)
+                }}
               />
             </label>
+            {joinError && <p className="muted">{joinError}</p>}
           </div>
 
           <div className="mode-card">

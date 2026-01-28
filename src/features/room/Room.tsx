@@ -170,7 +170,6 @@ export default function Room() {
       const playerLabel = new URLSearchParams(window.location.search).get('player')
       const autoName =
         playerLabel && !storedName && !displayName ? `Player ${playerLabel}` : null
-      const inviteFromUrl = new URLSearchParams(window.location.search).get('code') ?? undefined
       const audienceFromUrl = new URLSearchParams(window.location.search).get('audienceCode') ?? undefined
       const publicFlag = new URLSearchParams(window.location.search).get('public')
       const visibility = publicFlag === '1' ? 'public' : 'private'
@@ -184,7 +183,7 @@ export default function Room() {
         JSON.stringify({
           type: 'hello',
           sessionToken: storedToken ?? undefined,
-          inviteCode: inviteFromUrl ?? undefined,
+          // roomId is the join code; no separate inviteCode
           hostKey: hostKeyFromUrl ?? undefined,
           audienceCode: audienceFromUrl ?? undefined,
           visibility: hostKeyFromUrl ? visibility : undefined
@@ -432,18 +431,30 @@ export default function Room() {
     }
   }, [phase, settings?.defaultTime])
 
+  // Sponsor stinger overlay
+  // NOTE: This is intentionally split into two effects.
+  // If we include `sponsorOverlaySeen` in the same effect that creates the timeout,
+  // React will run cleanup on re-render and clear the timeout immediately.
   useEffect(() => {
     if (phase === 'lobby') {
       setSponsorOverlaySeen(false)
       setShowSponsorOverlay(false)
-      return
     }
-    if (phase !== 'hunt' || sponsorOverlaySeen || !sponsorSlot) return
-    setShowSponsorOverlay(true)
+  }, [phase])
+
+  useEffect(() => {
+    if (phase !== 'hunt') return
+    if (sponsorOverlaySeen) return
+    if (!sponsorSlot) return
     setSponsorOverlaySeen(true)
+    setShowSponsorOverlay(true)
+  }, [phase, sponsorOverlaySeen, sponsorSlot])
+
+  useEffect(() => {
+    if (!showSponsorOverlay) return
     const timeout = window.setTimeout(() => setShowSponsorOverlay(false), 3500)
     return () => window.clearTimeout(timeout)
-  }, [phase, sponsorOverlaySeen, sponsorSlot])
+  }, [showSponsorOverlay])
 
   const currentPlayer = players.find((player) => player.id === playerId) ?? null
   const isHost = currentPlayer?.isHost ?? false
@@ -592,11 +603,7 @@ export default function Room() {
     ws.send(JSON.stringify({ type: 'kick_player', playerId }))
   }
 
-  const rotateInviteCode = () => {
-    const ws = socketRef.current
-    if (!ws || ws.readyState !== WebSocket.OPEN) return
-    ws.send(JSON.stringify({ type: 'rotate_invite' }))
-  }
+  // No "rotate invite" anymore: roomId is the only join code.
 
   const closeRoom = () => {
     const ws = socketRef.current
@@ -611,8 +618,7 @@ export default function Room() {
 
   const copyInvite = async () => {
     if (!roomId) return
-    const code = inviteCode ?? roomId
-    const url = `${window.location.origin}/room/${roomId}?code=${encodeURIComponent(code)}`
+    const url = `${window.location.origin}/room/${roomId}`
     try {
       await navigator.clipboard.writeText(url)
       setActionNotice('Invite link copied.')
@@ -767,10 +773,8 @@ export default function Room() {
   while (playerSlots.length < maxPlayers) {
     playerSlots.push(null)
   }
-  const roomCode = inviteCode ?? roomId ?? '---'
-  const inviteUrl = roomId
-    ? `${window.location.origin}/room/${roomId}?code=${encodeURIComponent(inviteCode ?? roomId)}`
-    : ''
+  const roomCode = roomId ?? '---'
+  const inviteUrl = roomId ? `${window.location.origin}/room/${roomId}` : ''
   const submittedCount = Object.keys(submissionSaved).length
   const nextCategory = categories[history.length]?.name
   const timerMin = settings?.minTime ?? 3
@@ -1520,12 +1524,7 @@ export default function Room() {
             <span className="btn-icon">INV</span>
             Invite
           </button>
-          {isHost && (
-            <button className="btn ghost action-btn" onClick={rotateInviteCode} disabled={!roomId}>
-              <span className="btn-icon">NEW</span>
-              New code
-            </button>
-          )}
+          {/* invite rotation removed: roomId is the join code */}
           {actionNotice && <span className="muted">{actionNotice}</span>}
         </div>
         <div className="actions-right">
