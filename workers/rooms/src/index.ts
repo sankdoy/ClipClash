@@ -548,6 +548,13 @@ export class RoomsDOv2 implements DurableObject {
       replacedByNew: false
     }
 
+    // Store initial session on the socket itself so we can recover it even if Map lookups fail.
+    try {
+      server.serializeAttachment(session)
+    } catch {
+      // ignore
+    }
+
     this.state.acceptWebSocket(server)
     this.sessions.set(server, session)
 
@@ -559,26 +566,46 @@ export class RoomsDOv2 implements DurableObject {
   }
 
   async webSocketMessage(ws: WebSocket, message: string) {
-    const parsed = safeJsonParse(message)
+    // IMPORTANT: Never let a thrown exception crash the Durable Object.
+    // If this throws, Cloudflare will close the websocket (often code 1006),
+    // and the client will appear “stuck” (no chat, no phase changes).
+    let sessionForAttach: Session | null = null
     try {
-      console.log('ws_msg', typeof message, parsed ? (parsed as any).type : 'invalid')
-    } catch {
-      // ignore
+      const parsed = safeJsonParse(message)
+      try {
+        console.log('ws_msg', typeof message, parsed ? (parsed as any).type : 'invalid')
+      } catch {
+        // ignore
+      }
+
+      if (!parsed) {
+        ws.send(toServerMessage({ type: 'error', message: 'Invalid message payload.' }))
+        void this.logEvent({
+          level: 'warn',
+          eventType: 'ws_invalid_payload',
+          message: 'Invalid message payload.'
+        })
+        return
+      }
+
+      // ---- existing handler logic continues below ----
+
+    let session = this.sessions.get(ws) as Session | undefined
+    if (!session) {
+      // Map lookup can fail across events; use attachment as the source of truth.
+      session = (ws.deserializeAttachment?.() as Session | undefined) ?? undefined
+      if (session) {
+        this.sessions.set(ws, session)
+      }
     }
-    if (!parsed) {
-      ws.send(toServerMessage({ type: 'error', message: 'Invalid message payload.' }))
-      void this.logEvent({
-        level: 'warn',
-        eventType: 'ws_invalid_payload',
-        message: 'Invalid message payload.'
-      })
+    if (!session) {
+      console.log('ws_no_session')
       return
     }
-
-    const session = this.sessions.get(ws)
-    if (!session) return
+    sessionForAttach = session
 
     if (parsed.type !== 'hello' && session.role === 'player' && !session.playerId) {
+      console.log('reject_not_authenticated', parsed.type)
       ws.send(toServerMessage({ type: 'error', message: 'Not authenticated.' }))
       return
     }
@@ -921,6 +948,15 @@ export class RoomsDOv2 implements DurableObject {
     }
 
     if (parsed.type === 'start_hunt') {
+      console.log('start_hunt_enter', {
+        phase: this.phase,
+        role: session.role,
+        hostId: this.hostId,
+        playerId: session.playerId,
+        players: this.players.size,
+        connected: Array.from(this.players.values()).filter((p) => p.isConnected).length
+      })
+
       if (session.role !== 'player') {
         console.log('start_hunt_reject_role', session.role)
         return
@@ -969,7 +1005,10 @@ export class RoomsDOv2 implements DurableObject {
         this.timer.huntRemainingSeconds = this.timer.targetMinutes * 60
         this.timer.intermissionRemainingSeconds = null
         this.timer.lastTickAt = Date.now()
+
+        console.log('start_hunt_broadcast_timer', { huntRemaining: this.timer.huntRemainingSeconds })
         this.broadcast({ type: 'timer', phase: this.phase, timer: this.timer })
+        this.broadcastRoomState()
         await this.ensureAlarm()
 
         void this.logEvent({
@@ -1239,6 +1278,27 @@ export class RoomsDOv2 implements DurableObject {
       }
       this.persistState()
     }
+  } catch (error) {
+      // Log to tail + keep the room alive.
+      try {
+        console.error('webSocketMessage_error', error)
+      } catch {
+        // ignore
+      }
+      try {
+        ws.send(toServerMessage({ type: 'error', message: 'Server error.' }))
+      } catch {
+        // ignore
+      }
+    } finally {
+      if (sessionForAttach) {
+        try {
+          ws.serializeAttachment?.(sessionForAttach)
+        } catch {
+          // ignore
+        }
+      }
+    }
   }
 
   webSocketClose(ws: WebSocket) {
@@ -1338,7 +1398,17 @@ export class RoomsDOv2 implements DurableObject {
   broadcast(message: ServerMessage) {
     const payload = toServerMessage(message)
     for (const socket of this.sessions.keys()) {
-      socket.send(payload)
+      try {
+        socket.send(payload)
+      } catch {
+        // Don’t let a single bad socket crash the room.
+        try {
+          socket.close(1011, 'Socket send failed')
+        } catch {
+          // ignore
+        }
+        this.sessions.delete(socket)
+      }
     }
   }
 
