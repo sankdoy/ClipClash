@@ -3,6 +3,8 @@ import { logEvent } from '../_lib/db'
 
 export type Env = {
   DB: D1Database
+  MAIL_FROM_EMAIL?: string
+  MAIL_FROM_NAME?: string
 }
 
 export function json(data: unknown, init: ResponseInit = {}) {
@@ -28,12 +30,7 @@ export function getCookie(headers: Headers, name: string) {
 }
 
 export function setCookie(name: string, value: string, options: { maxAge?: number } = {}) {
-  const attrs = [
-    `${name}=${encodeURIComponent(value)}`,
-    'Path=/',
-    'HttpOnly',
-    'SameSite=Lax'
-  ]
+  const attrs = [`${name}=${encodeURIComponent(value)}`, 'Path=/', 'HttpOnly', 'SameSite=Lax']
   if (options.maxAge) {
     attrs.push(`Max-Age=${options.maxAge}`)
   }

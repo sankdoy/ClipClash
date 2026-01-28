@@ -13,22 +13,25 @@ export async function onRequestPost({ request, env }: { request: Request; env: E
 
   const code = Math.floor(100000 + Math.random() * 900000).toString()
   const hash = await hashCode(code)
-  const hashHex = Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('')
+  const hashHex = Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')
   const now = new Date()
   const expires = new Date(now.getTime() + 10 * 60 * 1000)
 
-  await env.DB.prepare('DELETE FROM auth_codes WHERE email = ?')
-    .bind(email)
-    .run()
+  await env.DB.prepare('DELETE FROM auth_codes WHERE email = ?').bind(email).run()
   await env.DB.prepare('INSERT INTO auth_codes (email, code_hash, created_at, expires_at) VALUES (?, ?, ?, ?)')
     .bind(email, hashHex, now.toISOString(), expires.toISOString())
     .run()
 
+  // NOTE: Email delivery will be wired later (MailChannels + owned domain).
+  // For now, this endpoint only issues a code.
   await logEvent(env, {
     level: 'info',
     eventType: 'auth_request',
-    message: 'Login code issued.',
+    message: 'Login code issued (not emailed yet).',
     meta: { email }
   })
+
   return json({ ok: true })
 }

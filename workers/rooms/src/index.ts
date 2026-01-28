@@ -560,6 +560,11 @@ export class RoomsDOv2 implements DurableObject {
 
   async webSocketMessage(ws: WebSocket, message: string) {
     const parsed = safeJsonParse(message)
+    try {
+      console.log('ws_msg', typeof message, parsed ? (parsed as any).type : 'invalid')
+    } catch {
+      // ignore
+    }
     if (!parsed) {
       ws.send(toServerMessage({ type: 'error', message: 'Invalid message payload.' }))
       void this.logEvent({
@@ -916,30 +921,73 @@ export class RoomsDOv2 implements DurableObject {
     }
 
     if (parsed.type === 'start_hunt') {
-      if (session.role !== 'player') return
-      if (this.phase !== 'lobby') return
-      if (!this.isHost(session)) return
-      if (!this.allPlayersReady()) {
-        ws.send(toServerMessage({ type: 'error', message: 'Waiting for players to ready up.' }))
+      if (session.role !== 'player') {
+        console.log('start_hunt_reject_role', session.role)
         return
       }
-      if (!this.sponsorSlot) {
-        this.sponsorSlot = await this.assignSponsorSlot()
+      if (this.phase !== 'lobby') {
+        console.log('start_hunt_reject_phase', this.phase)
+        return
       }
-      this.requiredDoneIds = new Set(
-        Array.from(this.players.values())
-          .filter((player) => player.isConnected && player.id !== this.hostId)
-          .map((player) => player.id)
-      )
-      for (const id of this.players.keys()) {
-        this.doneByPlayer.set(id, false)
+      if (!this.isHost(session)) {
+        console.log('start_hunt_reject_not_host', { hostId: this.hostId, playerId: session.playerId })
+        return
       }
-      this.phase = 'hunt'
-      this.timer.huntRemainingSeconds = this.timer.targetMinutes * 60
-      this.timer.intermissionRemainingSeconds = null
-      this.timer.lastTickAt = Date.now()
-      this.broadcast({ type: 'timer', phase: this.phase, timer: this.timer })
-      await this.ensureAlarm()
+
+      void this.logEvent({
+        level: 'info',
+        eventType: 'start_hunt_request',
+        playerId: session.playerId ?? null,
+        accountId: session.accountId ?? null
+      })
+
+      if (!this.allPlayersReady()) {
+        ws.send(toServerMessage({ type: 'error', message: 'Waiting for players to ready up.' }))
+        void this.logEvent({
+          level: 'warn',
+          eventType: 'start_hunt_reject_not_ready',
+          playerId: session.playerId ?? null,
+          accountId: session.accountId ?? null
+        })
+        return
+      }
+
+      try {
+        if (!this.sponsorSlot) {
+          this.sponsorSlot = await this.assignSponsorSlot()
+        }
+
+        this.requiredDoneIds = new Set(
+          Array.from(this.players.values())
+            .filter((player) => player.isConnected && player.id !== this.hostId)
+            .map((player) => player.id)
+        )
+        for (const id of this.players.keys()) {
+          this.doneByPlayer.set(id, false)
+        }
+        this.phase = 'hunt'
+        this.timer.huntRemainingSeconds = this.timer.targetMinutes * 60
+        this.timer.intermissionRemainingSeconds = null
+        this.timer.lastTickAt = Date.now()
+        this.broadcast({ type: 'timer', phase: this.phase, timer: this.timer })
+        await this.ensureAlarm()
+
+        void this.logEvent({
+          level: 'info',
+          eventType: 'start_hunt_ok',
+          playerId: session.playerId ?? null,
+          accountId: session.accountId ?? null
+        })
+      } catch (error) {
+        ws.send(toServerMessage({ type: 'error', message: 'Unable to start match.' }))
+        void this.logEvent({
+          level: 'error',
+          eventType: 'start_hunt_error',
+          message: error instanceof Error ? error.message : 'Unknown error',
+          playerId: session.playerId ?? null,
+          accountId: session.accountId ?? null
+        })
+      }
     }
 
     if (parsed.type === 'reset_match') {
@@ -1987,7 +2035,8 @@ export class RoomsDOv2 implements DurableObject {
   async assignSponsorSlot() {
     if (!this.env.DB) return buildDefaultSponsorSlot()
 
-    const WEIGHT_CAP = 5000
+    try {
+      const WEIGHT_CAP = 5000
     const SMALL_THRESHOLD = 2000
     const FAIRNESS_SHARE = 0.1
     const FAIRNESS_WINDOW = 100
@@ -2157,6 +2206,10 @@ export class RoomsDOv2 implements DurableObject {
       clickUrl: selected.clickUrl,
       tagline: selected.tagline
     } as SponsorSlot
+    } catch {
+      // If sponsor tables are missing / misconfigured, don’t block the game.
+      return buildDefaultSponsorSlot()
+    }
   }
 
   async finalizeSponsorDebit() {
