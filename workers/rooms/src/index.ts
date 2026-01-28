@@ -572,11 +572,6 @@ export class RoomsDOv2 implements DurableObject {
     let sessionForAttach: Session | null = null
     try {
       const parsed = safeJsonParse(message)
-      try {
-        console.log('ws_msg', typeof message, parsed ? (parsed as any).type : 'invalid')
-      } catch {
-        // ignore
-      }
 
       if (!parsed) {
         ws.send(toServerMessage({ type: 'error', message: 'Invalid message payload.' }))
@@ -588,9 +583,7 @@ export class RoomsDOv2 implements DurableObject {
         return
       }
 
-      // ---- existing handler logic continues below ----
-
-    let session = this.sessions.get(ws) as Session | undefined
+      let session = this.sessions.get(ws) as Session | undefined
     if (!session) {
       // Map lookup can fail across events; use attachment as the source of truth.
       session = (ws.deserializeAttachment?.() as Session | undefined) ?? undefined
@@ -599,13 +592,11 @@ export class RoomsDOv2 implements DurableObject {
       }
     }
     if (!session) {
-      console.log('ws_no_session')
       return
     }
     sessionForAttach = session
 
     if (parsed.type !== 'hello' && session.role === 'player' && !session.playerId) {
-      console.log('reject_not_authenticated', parsed.type)
       ws.send(toServerMessage({ type: 'error', message: 'Not authenticated.' }))
       return
     }
@@ -948,25 +939,13 @@ export class RoomsDOv2 implements DurableObject {
     }
 
     if (parsed.type === 'start_hunt') {
-      console.log('start_hunt_enter', {
-        phase: this.phase,
-        role: session.role,
-        hostId: this.hostId,
-        playerId: session.playerId,
-        players: this.players.size,
-        connected: Array.from(this.players.values()).filter((p) => p.isConnected).length
-      })
-
       if (session.role !== 'player') {
-        console.log('start_hunt_reject_role', session.role)
         return
       }
       if (this.phase !== 'lobby') {
-        console.log('start_hunt_reject_phase', this.phase)
         return
       }
       if (!this.isHost(session)) {
-        console.log('start_hunt_reject_not_host', { hostId: this.hostId, playerId: session.playerId })
         return
       }
 
@@ -1006,7 +985,6 @@ export class RoomsDOv2 implements DurableObject {
         this.timer.intermissionRemainingSeconds = null
         this.timer.lastTickAt = Date.now()
 
-        console.log('start_hunt_broadcast_timer', { huntRemaining: this.timer.huntRemainingSeconds })
         this.broadcast({ type: 'timer', phase: this.phase, timer: this.timer })
         this.broadcastRoomState()
         await this.ensureAlarm()
