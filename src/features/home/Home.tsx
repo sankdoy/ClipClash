@@ -52,15 +52,29 @@ export default function Home() {
 
     setJoinError(null)
 
-    // Accept a full invite URL.
-    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-      window.location.assign(trimmed)
-      return
+    const toRoomPath = (raw: string) => {
+      try {
+        const url = raw.startsWith('/') ? new URL(raw, window.location.origin) : new URL(raw)
+        const match = url.pathname.match(/^\/room\/(room-[a-z0-9]{6})(?:\/)?$/i)
+        if (!match) return null
+        const params = new URLSearchParams(url.search)
+        // Never allow pasting a hostKey into the join box to accidentally grant host powers.
+        params.delete('hostKey')
+        const search = params.toString()
+        return `/room/${match[1]}${search ? `?${search}` : ''}${url.hash}`
+      } catch {
+        return null
+      }
     }
 
-    // Accept a site-relative room path.
-    if (trimmed.startsWith('/room/')) {
-      window.location.assign(trimmed)
+    // Accept a full invite URL or a site-relative room path (but validate format).
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/room/')) {
+      const next = toRoomPath(trimmed)
+      if (!next) {
+        setJoinError('Paste a full invite link, or a room code like “room-abc123”.')
+        return
+      }
+      navigate(next)
       return
     }
 
@@ -109,7 +123,7 @@ export default function Home() {
           <div className="mode-card">
             <p className="eyebrow">Play</p>
             <h2>Start a room.</h2>
-            <p className="muted">2–10 players. One shared timer. Invite friends with the code in the room.</p>
+            <p className="muted">3–10 players. One shared timer. Invite friends with the code in the room.</p>
             <div className="mode-actions">
               <button className="btn primary" onClick={startRoom}>
                 Start a room

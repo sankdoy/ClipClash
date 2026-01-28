@@ -1,5 +1,5 @@
 import React from 'react'
-import { Link, Route, Routes, useLocation } from 'react-router-dom'
+import { Link, Route, Routes } from 'react-router-dom'
 import Home from './features/home/Home'
 import About from './features/about/About'
 import Room from './features/room/Room'
@@ -11,13 +11,11 @@ import Settings from './features/settings/Settings'
 import Owner from './features/owner/Owner'
 
 function Header() {
-  const location = useLocation()
-  const isHome = location.pathname === '/'
   return (
     <header className="board-header">
       <div className="board-header-left">
         <Link className="board-back" to="/">
-          {isHome ? 'Home' : 'Back'}
+          Home
         </Link>
       </div>
       <div className="board-header-center">

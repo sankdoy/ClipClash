@@ -837,11 +837,7 @@ export default function Room() {
     return `${timer.targetMinutes}:00`
   }
 
-  const timerLabel = () => {
-    if (phase === 'hunt') return 'Hunt ends in'
-    if (phase === 'intermission') return 'Intermission'
-    return 'Current target'
-  }
+  const timerLabelText = phase === 'hunt' ? 'Hunt ends in' : phase === 'intermission' ? 'Intermission' : ''
 
   if (isAudienceView) {
     return (
@@ -996,7 +992,7 @@ export default function Room() {
                   <h3>Lobby controls</h3>
                   <div className="timer">
                     <span className="timer-value">{displayTimer()}</span>
-                    <span className="timer-label">{timerLabel()}</span>
+                    {timerLabelText && <span className="timer-label">{timerLabelText}</span>}
                   </div>
                   <div className="timer-controls">
                     <label className="field">
@@ -1240,7 +1236,7 @@ export default function Room() {
                 <h3>{phase === 'hunt' ? 'Hunt mode' : phase === 'intermission' ? 'Intermission' : 'Round in progress'}</h3>
                 <div className="timer">
                   <span className="timer-value">{displayTimer()}</span>
-                  <span className="timer-label">{timerLabel()}</span>
+                  {timerLabelText && <span className="timer-label">{timerLabelText}</span>}
                 </div>
                 {phase === 'hunt' && (
                   <p className="muted">Submit one TikTok per category. You have {categories.length} categories.</p>
@@ -1473,15 +1469,11 @@ export default function Room() {
                 chat.map((line) => (
                   <div className="chat-line" key={line.id}>
                     <span>{line.name}:</span> {line.message}
-                    <button className="btn ghost" onClick={() => sendReport(line.id)}>
-                      Report
-                    </button>
                   </div>
                 ))
               )}
             </div>
             {reportNotice && <p className="muted">{reportNotice}</p>}
-            <p className="muted">Reports logged: {reportCount}</p>
             <form
               className="chat-form"
               onSubmit={(e) => {
@@ -1507,7 +1499,7 @@ export default function Room() {
           <div className="panel-card">
             <h3>Sponsor</h3>
             <Link className="sponsor-slot" to="/sponsor">
-              Buy this slot
+              Buy a slot
             </Link>
             <p className="muted">One sponsor per match. No popups.</p>
             <Link className="muted" to="/donate">
@@ -1554,7 +1546,7 @@ export default function Room() {
 
       {showSponsorOverlay && sponsorSlot && (
         <div className="sponsor-overlay" role="presentation">
-          <div className="sponsor-stinger">
+          <div className="sponsor-stinger" onAnimationEnd={() => setShowSponsorOverlay(false)}>
             <p className="eyebrow">Sponsored by</p>
             {sponsorSlot.imageUrl ? (
               <img src={sponsorSlot.imageUrl} alt={sponsorSlot.sponsorName || 'Sponsor'} />

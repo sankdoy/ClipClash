@@ -2,7 +2,7 @@
 
 ClipClash (clipclash.com) — a social voting game where players submit and vote on TikTok videos across fun categories.
 
-Short summary: Players (2–10) join public or private rooms, vote on a time limit, paste TikTok links into category slots during a timed submission phase, then vote anonymously on winners. Rounds include intermissions, tie-breakers via rock-paper-scissors, and a persistent chat. One sponsor slot per game is available.
+Short summary: Players (3–10) join public or private rooms, vote on a time limit, paste TikTok links into category slots during a timed submission phase, then vote anonymously on winners. Rounds include intermissions, tie-breakers via rock-paper-scissors, and a persistent chat. One sponsor slot per game is available.
 
 Tech stack (current)
 - Vite + React + TypeScript
@@ -24,7 +24,7 @@ Game flow
   G) Tie-break: rock-paper-scissors with a clean UI
   H) Missing link handling: show “no submission” and skip quickly
 
-Chat is open throughout. Ads: one sponsor slot per game (not per round), no popups; if unfilled show “Buy this slot” link placeholder.
+Chat is open throughout. Ads: one sponsor slot per game (not per round), no popups; if unfilled show “Buy a slot” link placeholder.
 
 Safety note: TikTok links only; no scraping. Embedding/preview may be limited by TikTok policies.
 
