@@ -51,15 +51,27 @@ export function isValidUsername(name: string) {
   return /^[a-zA-Z0-9 _-]+$/.test(name)
 }
 
-export async function getSessionUser(env: Env, request: Request) {
+export type SessionUser = {
+  id: string
+  email: string
+  username: string
+  avatar_url?: string | null
+  is_owner?: number | null
+}
+
+export function isOwner(user: SessionUser | null | undefined) {
+  return Boolean(user && Number(user.is_owner ?? 0) === 1)
+}
+
+export async function getSessionUser(env: Env, request: Request): Promise<SessionUser | null> {
   const token = getCookie(request.headers, 'cc_session')
   if (!token) return null
   const result = await env.DB.prepare(
-    'SELECT users.id, users.email, users.username, users.avatar_url FROM sessions JOIN users ON users.id = sessions.user_id WHERE sessions.token = ? AND sessions.expires_at > ?'
+    'SELECT users.id, users.email, users.username, users.avatar_url, users.is_owner FROM sessions JOIN users ON users.id = sessions.user_id WHERE sessions.token = ? AND sessions.expires_at > ?'
   )
     .bind(token, new Date().toISOString())
     .first()
-  return result ?? null
+  return (result ?? null) as SessionUser | null
 }
 
 export { logEvent }
