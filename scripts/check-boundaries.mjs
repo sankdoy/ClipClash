@@ -5,8 +5,11 @@ const ROOTS = ['functions', 'workers']
 const EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.mjs', '.cjs'])
 const IGNORE_DIRS = new Set(['node_modules', 'dist', '.wrangler'])
 
-const DISALLOWED_SRC = /(^|\/)src\//
-const ALLOWED_SRC_TYPES = /(^|\/)src\/types(\/|$)/
+// Disallow importing the *frontend* src/ tree from non-frontend runtimes.
+// We only need to catch paths that traverse up to repo root (../../src/...),
+// not local runtime folders that happen to also be named src/ (e.g. workers/**/src).
+const DISALLOWED_SRC = /^(\.\.\/){2,}src\//
+const ALLOWED_SRC_TYPES = /^(\.\.\/){2,}src\/types(\/|$)/
 
 const importRegex = /(?:from\s+['"]([^'"]+)['"]|require\(\s*['"]([^'"]+)['"]\s*\)|import\(\s*['"]([^'"]+)['"]\s*\))/g
 

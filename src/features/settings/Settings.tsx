@@ -17,6 +17,7 @@ export default function Settings() {
     theme,
     mode,
     setTheme,
+    setMode,
     customCss,
     setCustomCss,
     backgroundImage,

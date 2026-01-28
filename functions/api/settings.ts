@@ -1,5 +1,5 @@
 import { getSessionUser, json, logEvent, Env } from './_helpers'
-import { ThemeMode, themePacks } from '../../src/theme'
+import { ThemeMode, themePacks } from '../../shared/theme'
 
 const allowedThemes = new Set(themePacks.map((pack) => pack.id))
 

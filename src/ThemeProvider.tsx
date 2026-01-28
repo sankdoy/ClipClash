@@ -5,6 +5,7 @@ import { getMe } from './utils/auth'
 const STORAGE_THEME = 'cc_theme'
 const STORAGE_CUSTOM = 'cc_custom_theme'
 const STORAGE_BG_IMAGE = 'cc_bg_image'
+const STORAGE_MODE = 'cc_mode'
 
 type ThemeContextValue = {
   theme: string
@@ -39,7 +40,10 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
     return storedTheme ?? 'clash'
   })
   const [mode, setMode] = useState<ThemeMode>(() => {
-    return 'system'
+    const storedMode = window.localStorage.getItem(STORAGE_MODE)
+    return storedMode === 'light' || storedMode === 'dark' || storedMode === 'system'
+      ? storedMode
+      : 'system'
   })
   const [customCss, setCustomCss] = useState(() => {
     const storedCustom = window.localStorage.getItem(STORAGE_CUSTOM)
@@ -64,6 +68,7 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
     }
     try {
       window.localStorage.setItem(STORAGE_THEME, theme)
+      window.localStorage.setItem(STORAGE_MODE, mode)
       window.localStorage.setItem(STORAGE_CUSTOM, customCss)
       window.localStorage.setItem(STORAGE_BG_IMAGE, backgroundImage)
     } catch (error) {

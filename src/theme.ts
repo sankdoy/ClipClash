@@ -1,18 +1,8 @@
-export type ThemeMode = 'light' | 'dark' | 'system'
+import type { ThemeMode } from '../shared/theme'
+import { themePacks } from '../shared/theme'
 
-export type ThemePack = {
-  id: string
-  label: string
-}
-
-export const themePacks: ThemePack[] = [
-  { id: 'neonTikTok', label: 'Neon TikTok' },
-  { id: 'clash', label: 'Classic' },
-  { id: 'neon', label: 'Neon Mint' },
-  { id: 'sunset', label: 'Sunset Coral' },
-  { id: 'mono', label: 'Mono Ink' },
-  { id: 'custom', label: 'Custom CSS' }
-]
+export type { ThemeMode }
+export { themePacks }
 
 export function resolveMode(mode: ThemeMode) {
   if (mode === 'system') {
