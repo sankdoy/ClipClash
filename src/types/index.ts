@@ -56,6 +56,8 @@ export interface RoundState {
   categoryName: string
   entries: RoundEntry[]
   votesByEntryId: Record<string, number>
+  stage: 'playback' | 'vote'
+  playbackIndex: number
   remainingSeconds: number | null
 }
 
@@ -162,6 +164,7 @@ export type ServerMessage =
   | { type: 'room_closed'; message: string }
   | { type: 'timer'; phase: Phase; timer: TimerState }
   | { type: 'round_start'; round: RoundState }
+  | { type: 'round_update'; round: RoundState }
   | { type: 'round_result'; result: RoundResult }
   | { type: 'tiebreak_start'; tiebreak: TieBreakState }
   | { type: 'tiebreak_result'; tiebreak: TieBreakState }

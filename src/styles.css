@@ -957,8 +957,13 @@ body{
 		flex-direction:column;
 		gap:10px;
 	}
+	.tiktok-frame{
+		display:flex;
+		justify-content:center;
+	}
 	.tiktok-embed{
-		width:100%;
+		width:min(420px,100%);
+		aspect-ratio:9/16;
 		border:0;
 		border-radius:12px;
 		background:var(--panel);

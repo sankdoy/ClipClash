@@ -145,9 +145,6 @@ export default function Room() {
   const [inviteCode, setInviteCode] = useState<string | null>(null)
   const [audienceCode, setAudienceCode] = useState<string | null>(null)
   const [timerDraft, setTimerDraft] = useState(10)
-  const [playbackOrder, setPlaybackOrder] = useState<RoundEntry[]>([])
-  const [playbackIndex, setPlaybackIndex] = useState(0)
-  const [playbackPause, setPlaybackPause] = useState(false)
   const [streamerModeEnabled, setStreamerModeEnabled] = useState(false)
   const socketRef = useRef<WebSocket | null>(null)
   const timerRef = useRef<TimerState | null>(null)
@@ -262,6 +259,9 @@ export default function Room() {
         setTiebreakChoice(null)
         setVoteSelection(null)
       }
+      if (data.type === 'round_update') {
+        setRound(data.round)
+      }
       if (data.type === 'round_result') {
         setRoundResult(data.result)
       }
@@ -366,40 +366,6 @@ export default function Room() {
   useEffect(() => {
     timerRef.current = timer
   }, [timer])
-
-  useEffect(() => {
-    if (phase !== 'rounds' || !round) {
-      setPlaybackOrder([])
-      setPlaybackIndex(0)
-      setPlaybackPause(false)
-      return
-    }
-    const validEntries = (round.entries ?? []).filter((entry) => entry.url && isTikTokUrl(entry.url))
-    const shuffled = shuffleEntries(validEntries)
-    setPlaybackOrder(shuffled)
-    setPlaybackIndex(0)
-    setPlaybackPause(false)
-  }, [phase, round?.categoryId])
-
-  useEffect(() => {
-    if (phase !== 'rounds') return
-    if (playbackOrder.length === 0) return
-    let timeout: number | null = null
-    if (playbackPause) {
-      if (playbackIndex >= playbackOrder.length - 1) return
-      timeout = window.setTimeout(() => {
-        setPlaybackPause(false)
-        setPlaybackIndex((prev) => Math.min(prev + 1, playbackOrder.length - 1))
-      }, 2000)
-    } else {
-      timeout = window.setTimeout(() => {
-        setPlaybackPause(true)
-      }, 10000)
-    }
-    return () => {
-      if (timeout) window.clearTimeout(timeout)
-    }
-  }, [phase, playbackOrder.length, playbackIndex, playbackPause])
 
   useEffect(() => {
     let interval: number | null = null
@@ -554,6 +520,9 @@ export default function Room() {
   }
 
   const sendVoteEntry = (entryId: string) => {
+    if (phase !== 'rounds') return
+    if (!round || round.stage !== 'vote') return
+    if (voteSelection) return
     const ws = socketRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return
     ws.send(JSON.stringify({ type: 'vote_submission', entryId }))
@@ -852,21 +821,28 @@ export default function Room() {
         <div className="panel-card">
           {phase === 'rounds' && round ? (
             <>
-              <h3>Vote now</h3>
+              <h3>{round.stage === 'vote' ? 'Vote now' : 'Watching clips'}</h3>
               <p className="muted">Category: {round.categoryName}</p>
-              <div className="round-grid">
-                {round.entries.map((entry) => (
-                  <button
-                    key={entry.id}
-                    className={`round-entry ${voteSelection === entry.id ? 'selected' : ''}`}
-                    onClick={() => sendVoteEntry(entry.id)}
-                    disabled={!!tiebreak}
-                  >
-                    <div className="round-thumb" aria-hidden="true" />
-                    <span className="round-label">{entry.label}</span>
-                  </button>
-                ))}
-              </div>
+              {round.stage === 'vote' ? (
+                <>
+                  <p className="muted">Vote time remaining: {round.remainingSeconds ?? 0}s</p>
+                  <div className="round-grid">
+                    {round.entries.map((entry) => (
+                      <button
+                        key={entry.id}
+                        className={`round-entry ${voteSelection === entry.id ? 'selected' : ''}`}
+                        onClick={() => sendVoteEntry(entry.id)}
+                        disabled={!!tiebreak || !!voteSelection}
+                      >
+                        <div className="round-thumb" aria-hidden="true" />
+                        <span className="round-label">{entry.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="muted">Voting opens after all clips play.</p>
+              )}
             </>
           ) : (
             <>
@@ -1233,11 +1209,21 @@ export default function Room() {
           ) : (
             <div className="center-stack">
               <div className="panel-card">
-                <h3>{phase === 'hunt' ? 'Hunt mode' : phase === 'intermission' ? 'Intermission' : 'Round in progress'}</h3>
-                <div className="timer">
-                  <span className="timer-value">{displayTimer()}</span>
-                  {timerLabelText && <span className="timer-label">{timerLabelText}</span>}
-                </div>
+                <h3>
+                  {phase === 'hunt'
+                    ? 'Hunt mode'
+                    : phase === 'intermission'
+                      ? 'Intermission'
+                      : phase === 'rounds'
+                        ? 'Voting'
+                        : 'Match complete'}
+                </h3>
+                {(phase === 'hunt' || phase === 'intermission') && (
+                  <div className="timer">
+                    <span className="timer-value">{displayTimer()}</span>
+                    {timerLabelText && <span className="timer-label">{timerLabelText}</span>}
+                  </div>
+                )}
                 {phase === 'hunt' && (
                   <p className="muted">Submit one TikTok per category. You have {categories.length} categories.</p>
                 )}
@@ -1247,7 +1233,19 @@ export default function Room() {
                   </p>
                 )}
                 {phase === 'rounds' && (
-                  <p className="muted">Vote secretly. You can only vote once per round.</p>
+                  <>
+                    <p className="muted">
+                      Category: <strong>{round?.categoryName ?? '...'}</strong>
+                    </p>
+                    {round?.stage === 'vote' ? (
+                      <p className="muted">Vote time remaining: {round?.remainingSeconds ?? 0}s</p>
+                    ) : (
+                      <p className="muted">Watching clips. Voting opens after all clips play.</p>
+                    )}
+                  </>
+                )}
+                {phase === 'results' && (
+                  <p className="muted">Match complete. Share results or play again below.</p>
                 )}
               </div>
 
@@ -1309,17 +1307,28 @@ export default function Room() {
                     Category: <strong>{round?.categoryName ?? '...'}</strong>
                   </p>
                   <div className="playback-card">
-                    {playbackOrder.length === 0 ? (
+                    {!round || (round.entries ?? []).length === 0 ? (
                       <p className="muted">No valid TikTok submissions to play.</p>
-                    ) : playbackPause ? (
-                      <p className="muted">Up next...</p>
-                    ) : (
+                    ) : round.stage === 'playback' ? (
                       <>
                         <p className="muted">
-                          Now playing: <strong>TikTok {playbackIndex + 1}</strong>
+                          Now playing:{' '}
+                          <strong>
+                            {round.entries[Math.min(round.playbackIndex, round.entries.length - 1)]?.label ??
+                              `TikTok ${round.playbackIndex + 1}`}
+                          </strong>
                         </p>
-                        <TikTokEmbed url={playbackOrder[playbackIndex]?.url ?? ''} />
+                        <TikTokEmbed
+                          url={
+                            round.entries[Math.min(round.playbackIndex, round.entries.length - 1)]?.url ?? ''
+                          }
+                        />
+                        <p className="muted">
+                          Clip {Math.min(round.playbackIndex + 1, round.entries.length)}/{round.entries.length}
+                        </p>
                       </>
+                    ) : (
+                      <p className="muted">All clips played. Vote now.</p>
                     )}
                   </div>
                   <div className="round-grid">
@@ -1328,14 +1337,16 @@ export default function Room() {
                         key={entry.id}
                         className={`round-entry ${voteSelection === entry.id ? 'selected' : ''}`}
                         onClick={() => sendVoteEntry(entry.id)}
-                        disabled={!!tiebreak}
+                        disabled={!!tiebreak || round?.stage !== 'vote' || !!voteSelection}
                       >
                         <span>{entry.label}</span>
-                        <span className="muted">{entry.url ?? 'No submission yet'}</span>
+                        <span className="muted">{entry.url ? 'Clip submitted' : 'No submission'}</span>
                       </button>
                     ))}
                   </div>
-                  <p className="muted">Time left: {round?.remainingSeconds ?? 0}s</p>
+                  {round?.stage === 'vote' && (
+                    <p className="muted">Vote time remaining: {round?.remainingSeconds ?? 0}s</p>
+                  )}
                   {tiebreak && (
                     <div className="tiebreak">
                       <p className="muted">Tie-breaker: Rock–Paper–Scissors</p>
@@ -1350,7 +1361,7 @@ export default function Room() {
                           </button>
                         ))}
                       </div>
-                      <p className="muted">Time left: {tiebreak.remainingSeconds ?? 0}s</p>
+                      <p className="muted">Tie-break time remaining: {tiebreak.remainingSeconds ?? 0}s</p>
                       {tiebreak.winnerEntryId && (
                         <div className="round-result">
                           <p>
@@ -1450,16 +1461,57 @@ export default function Room() {
         </main>
 
         <aside className="board-col side-col" data-panel="side">
-          <div className="panel-card">
-            <h3>How to play</h3>
-            <div className="help-graphic" />
-            <p className="muted">Vote the timer, hunt clips, then crown each category champion.</p>
-            <div className="help-dots">
-              <span className="dot active" />
-              <span className="dot" />
-              <span className="dot" />
+          {phase === 'rounds' ? (
+            <div className="panel-card">
+              <h3>Round</h3>
+              <p className="muted">
+                Category: <strong>{round?.categoryName ?? '...'}</strong>
+              </p>
+              {!round ? (
+                <p className="muted">Waiting for the round to start...</p>
+              ) : round.stage === 'vote' ? (
+                <p className="muted">Vote time remaining: {round.remainingSeconds ?? 0}s</p>
+              ) : (
+                <p className="muted">
+                  Watching clips {Math.min(round.playbackIndex + 1, round.entries.length)}/{round.entries.length}
+                </p>
+              )}
+              <p className="muted">
+                Your vote:{' '}
+                {voteSelection
+                  ? getWinnerLabelFromEntries(voteSelection, round?.entries ?? [])
+                  : !round
+                    ? '---'
+                    : round.stage === 'vote'
+                      ? 'Not voted yet'
+                      : 'Voting opens soon'}
+              </p>
+              <p className="muted">Next up: {categories[history.length + 1]?.name ?? 'Results'}</p>
+              <div className="scoreboard">
+                {scoreboard.length === 0 ? (
+                  <p className="muted">No wins yet.</p>
+                ) : (
+                  scoreboard.slice(0, 3).map((entry, index) => (
+                    <div key={entry.entryId} className={`score-row ${index === 0 ? 'leader' : ''}`}>
+                      <span>{entry.displayName}</span>
+                      <span>{entry.wins}</span>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="panel-card">
+              <h3>How to play</h3>
+              <div className="help-graphic" />
+              <p className="muted">Vote the timer, hunt clips, then crown each category champion.</p>
+              <div className="help-dots">
+                <span className="dot active" />
+                <span className="dot" />
+                <span className="dot" />
+              </div>
+            </div>
+          )}
           <div className="panel-card">
             <h3>Chat</h3>
             <div className="chat-window">
@@ -1672,17 +1724,6 @@ function buildShareSummary(scoreboard: ScoreboardEntry[], history: RoundHistoryE
   return lines.join('\n')
 }
 
-function shuffleEntries(entries: RoundEntry[]) {
-  const result = [...entries]
-  for (let i = result.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1))
-    const temp = result[i]
-    result[i] = result[j]
-    result[j] = temp
-  }
-  return result
-}
-
 function extractTikTokId(url: string) {
   const match = url.match(/\/video\/(\d+)/)
   return match?.[1] ?? null
@@ -1694,12 +1735,15 @@ function TikTokEmbed({ url }: { url: string }) {
     return <p className="muted">Unable to embed this TikTok.</p>
   }
   return (
-    <iframe
-      className="tiktok-embed"
-      title={`TikTok ${id}`}
-      src={`https://www.tiktok.com/embed/v2/${id}`}
-      allow="autoplay; fullscreen"
-      loading="lazy"
-    />
+    <div className="tiktok-frame">
+      <iframe
+        key={id}
+        className="tiktok-embed"
+        title={`TikTok ${id}`}
+        src={`https://www.tiktok.com/embed/v2/${id}?autoplay=1`}
+        allow="autoplay; fullscreen"
+        loading="lazy"
+      />
+    </div>
   )
 }

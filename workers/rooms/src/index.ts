@@ -135,6 +135,8 @@ const readyCooldownMs = 2000
 const reportCooldownMs = 3000
 const maxUrlLength = 4096
 const roomCapacity = 10
+const roundPlaybackSeconds = 60
+const roundVoteSeconds = 20
 
 const helloSchema = z.object({
   type: z.literal('hello'),
@@ -479,7 +481,7 @@ export class RoomsDOv2 implements DurableObject {
         ])
       )
       this.categoryIndex = stored.categoryIndex ?? 0
-      this.round = stored.round
+      this.round = stored.round ? normalizeRoundState(stored.round) : null
       this.tiebreak = stored.tiebreak
       const votesPlayerRaw = stored.votesByPlayer ?? {}
       this.votesByPlayer = new Map(
@@ -1139,20 +1141,23 @@ export class RoomsDOv2 implements DurableObject {
 
     if (parsed.type === 'vote_submission') {
       if (this.phase !== 'rounds' || !this.round) return
+      if (this.round.stage !== 'vote') return
       if (this.tiebreak) return
       if (Date.now() - session.lastVoteAt < voteCooldownMs) return
       const entry = this.round.entries.find((item) => item.id === parsed.entryId)
       if (!entry) return
       if (session.role === 'audience') {
         if (!session.audienceId) return
+        if (this.votesByAudience.has(session.audienceId)) return
         this.votesByAudience.set(session.audienceId, parsed.entryId)
       } else {
+        if (this.votesByPlayer.has(session.playerId!)) return
         this.votesByPlayer.set(session.playerId!, parsed.entryId)
       }
       session.lastVoteAt = Date.now()
       this.round.votesByEntryId = this.tallyVotes()
-      this.broadcast({ type: 'round_start', round: this.round })
-      if (this.allConnectedPlayersVoted()) {
+      this.broadcast({ type: 'round_update', round: this.round })
+      if (this.allConnectedParticipantsVoted()) {
         this.finishRound()
       } else {
         this.persistState()
@@ -1312,7 +1317,7 @@ export class RoomsDOv2 implements DurableObject {
       this.endHuntEarly()
       return
     }
-    if (this.phase === 'rounds' && this.allConnectedPlayersVoted()) {
+    if (this.phase === 'rounds' && this.round?.stage === 'vote' && this.allConnectedParticipantsVoted()) {
       this.finishRound()
       return
     }
@@ -1359,7 +1364,7 @@ export class RoomsDOv2 implements DurableObject {
       this.endHuntEarly()
       return
     }
-    if (this.phase === 'rounds' && this.allConnectedPlayersVoted()) {
+    if (this.phase === 'rounds' && this.round?.stage === 'vote' && this.allConnectedParticipantsVoted()) {
       this.finishRound()
       return
     }
@@ -1539,6 +1544,37 @@ export class RoomsDOv2 implements DurableObject {
     return connected.every((player) => this.votesByPlayer.has(player.id))
   }
 
+  allConnectedAudienceVoted() {
+    const audienceIds = new Set<string>()
+    for (const session of this.sessions.values()) {
+      if (session.role === 'audience' && session.audienceId) {
+        audienceIds.add(session.audienceId)
+      }
+    }
+    if (audienceIds.size === 0) return true
+    for (const id of audienceIds.values()) {
+      if (!this.votesByAudience.has(id)) {
+        return false
+      }
+    }
+    return true
+  }
+
+  allConnectedParticipantsVoted() {
+    return this.allConnectedPlayersVoted() && this.allConnectedAudienceVoted()
+  }
+
+  shuffle<T>(items: T[]) {
+    const result = items.slice()
+    for (let i = result.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1))
+      const temp = result[i]
+      result[i] = result[j]
+      result[j] = temp
+    }
+    return result
+  }
+
   kickPlayer(playerId: string) {
     const record = this.players.get(playerId)
     if (!record) return
@@ -1677,10 +1713,24 @@ export class RoomsDOv2 implements DurableObject {
         this.startNextRound()
       } else {
         this.round.remainingSeconds = Math.max(0, this.round.remainingSeconds - 1)
-        if (this.round.remainingSeconds === 0) {
-          this.finishRound()
+        if (this.round.stage === 'playback') {
+          if (this.round.remainingSeconds === 0) {
+            const nextIndex = this.round.playbackIndex + 1
+            if (nextIndex < this.round.entries.length) {
+              this.round.playbackIndex = nextIndex
+              this.round.remainingSeconds = roundPlaybackSeconds
+            } else {
+              this.round.stage = 'vote'
+              this.round.remainingSeconds = roundVoteSeconds
+            }
+          }
+          this.broadcast({ type: 'round_update', round: this.round })
         } else {
-          this.broadcast({ type: 'round_start', round: this.round })
+          if (this.round.remainingSeconds === 0) {
+            this.finishRound()
+          } else {
+            this.broadcast({ type: 'round_update', round: this.round })
+          }
         }
       }
       await this.persistState()
@@ -1721,7 +1771,9 @@ export class RoomsDOv2 implements DurableObject {
       categoryName: category.name,
       entries,
       votesByEntryId: {},
-      remainingSeconds: entries.length > 0 ? 20 : 3
+      stage: entries.length > 0 ? 'playback' : 'vote',
+      playbackIndex: 0,
+      remainingSeconds: entries.length > 0 ? roundPlaybackSeconds : 3
     }
     this.votesByPlayer.clear()
     this.votesByAudience.clear()
@@ -1748,18 +1800,19 @@ export class RoomsDOv2 implements DurableObject {
 
   buildRoundEntries(categoryId: string): RoundEntry[] {
     const entries: RoundEntry[] = []
-    let index = 1
     const categoryMap = categoryId ? this.submissions.get(categoryId) : undefined
     if (!categoryMap) return entries
     for (const submission of categoryMap.values()) {
       entries.push({
         id: submission.playerId,
-        label: `TikTok ${index}`,
+        label: '',
         url: submission.url
       })
-      index += 1
     }
-    return entries
+    return this.shuffle(entries).map((entry, index) => ({
+      ...entry,
+      label: `TikTok ${index + 1}`
+    }))
   }
 
   tallyVotes(): Record<string, number> {
@@ -2317,5 +2370,28 @@ function buildDefaultSponsorSlot(): SponsorSlot {
     imageUrl: '',
     clickUrl: '/sponsor',
     tagline: 'Sponsored by me myself and i, im awesome :)'
+  }
+}
+
+function normalizeRoundState(round: unknown): RoundState | null {
+  if (!round || typeof round !== 'object') return null
+  const candidate = round as Partial<RoundState>
+  if (!candidate.categoryId || !candidate.categoryName || !Array.isArray(candidate.entries)) return null
+
+  const stage = candidate.stage === 'playback' || candidate.stage === 'vote' ? candidate.stage : 'vote'
+  const playbackIndex = Number.isFinite(candidate.playbackIndex) ? Math.max(0, Math.floor(candidate.playbackIndex)) : 0
+  const remainingSeconds =
+    candidate.remainingSeconds === null || Number.isFinite(candidate.remainingSeconds)
+      ? (candidate.remainingSeconds as number | null)
+      : null
+
+  return {
+    categoryId: candidate.categoryId,
+    categoryName: candidate.categoryName,
+    entries: candidate.entries,
+    votesByEntryId: candidate.votesByEntryId ?? {},
+    stage,
+    playbackIndex,
+    remainingSeconds
   }
 }
