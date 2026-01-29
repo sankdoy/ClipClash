@@ -1228,3 +1228,18 @@ body{
 	.board-grid[data-mobile="players"] .players-col{display:flex}
 	.board-grid[data-mobile="side"] .side-col{display:flex}
 }
+
+/* Performance Mode - Disable expensive animations */
+.performance-mode .scene__glass,
+.performance-mode .scene__glass::before,
+.performance-mode .scene__glass::after {
+	display: none !important;
+}
+
+/* Respect user's OS preference for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+	.scene__glass::before,
+	.scene__glass::after {
+		animation: none !important;
+	}
+}

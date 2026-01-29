@@ -13,6 +13,9 @@ type User = {
 export default function Settings() {
   const [status, setStatus] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
+  const [performanceMode, setPerformanceMode] = useState(() => {
+    return localStorage.getItem('performance-mode') === 'true'
+  })
   const {
     theme,
     mode,
@@ -68,6 +71,16 @@ export default function Settings() {
       }
     })
   }, [])
+
+  useEffect(() => {
+    if (performanceMode) {
+      document.body.classList.add('performance-mode')
+      localStorage.setItem('performance-mode', 'true')
+    } else {
+      document.body.classList.remove('performance-mode')
+      localStorage.setItem('performance-mode', 'false')
+    }
+  }, [performanceMode])
 
   const saveTheme = async () => {
     if (!user) return
@@ -249,6 +262,20 @@ export default function Settings() {
           </button>
         )}
         {!user && <p className="muted">Theme saves locally unless you sign in.</p>}
+      </div>
+      <div className="card">
+        <h3>Performance</h3>
+        <label className="field" style={{flexDirection: 'row', alignItems: 'center', gap: '12px'}}>
+          <input
+            type="checkbox"
+            checked={performanceMode}
+            onChange={(e) => setPerformanceMode(e.target.checked)}
+          />
+          <span>Performance Mode (disables animated background)</span>
+        </label>
+        <p className="muted">
+          Enable this if you experience lag, especially when running other apps like YouTube.
+        </p>
       </div>
       <div className="card">
         <h3>Background image</h3>
