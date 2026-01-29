@@ -17,10 +17,16 @@ jobs:
           node-version: '20'
       - name: Install dependencies
         run: npm ci
+      - name: TypeCheck
+        run: npm run typecheck
       - name: Test
         run: npm test
-      - name: Build
+      - name: Check Boundaries
+        run: npm run check:boundaries
+      - name: Build (with placeholder WebSocket URL)
         run: npm run build
+        env:
+          VITE_ROOMS_WS_URL: wss://placeholder.example.com
       - name: Upload dist artifact
         uses: actions/upload-artifact@v4
         with:
