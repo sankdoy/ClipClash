@@ -11,25 +11,9 @@ type User = {
   avatar_url?: string
 }
 
-const backgroundAnimations = [
-  { id: 'wave', label: 'Wave (Default)' },
-  { id: 'spiral', label: 'Spiral' },
-  { id: 'ripple', label: 'Ripple' },
-  { id: 'drift', label: 'Drift' },
-  { id: 'pulse', label: 'Pulse' },
-  { id: 'flow', label: 'Flow' },
-  { id: 'none', label: 'None' }
-]
-
 export default function Settings() {
   const [status, setStatus] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
-  const [performanceMode, setPerformanceMode] = useState(() => {
-    return localStorage.getItem('performance-mode') === 'true'
-  })
-  const [bgAnimation, setBgAnimation] = useState(() => {
-    return localStorage.getItem('bg-animation') || 'wave'
-  })
   const {
     theme,
     mode,
@@ -67,7 +51,6 @@ export default function Settings() {
   --disabled-bg: #232a38;
   --disabled-text: #7f8a99;
   --disabled-border: #2f3a4f;
-  --bg-dots: radial-gradient(circle, rgba(255, 255, 255, 0.18) 1px, transparent 1px);
 }
 
 /* Tips:
@@ -75,20 +58,6 @@ export default function Settings() {
 - --panel / --card / --card-2: Surface colors
 - --text / --text-muted / --text-dim: Text hierarchy
 - --accent / --accent-hover: Interactive elements
-
-Background Animation Variables (optional):
-- --ball-speed: Animation duration (default: 10s)
-- --ball-opacity: Orb opacity (default: 0.35)
-- --ball-blur: Blur intensity (default: 0.6px)
-- --ball-size: Orb size (default: 120px)
-
-Example custom animation:
-.scene__glass {
-  --ball-speed: 15s;
-  --ball-opacity: 0.5;
-  --ball-blur: 1px;
-  --ball-size: 200px;
-}
 */`
 
   useEffect(() => {
@@ -103,27 +72,6 @@ Example custom animation:
     })
   }, [])
 
-  useEffect(() => {
-    if (performanceMode) {
-      document.body.classList.add('performance-mode')
-      localStorage.setItem('performance-mode', 'true')
-    } else {
-      document.body.classList.remove('performance-mode')
-      localStorage.setItem('performance-mode', 'false')
-    }
-  }, [performanceMode])
-
-  useEffect(() => {
-    // Remove all animation classes first
-    backgroundAnimations.forEach(anim => {
-      document.body.classList.remove(`bg-anim-${anim.id}`)
-    })
-    // Add the selected animation class
-    if (bgAnimation && bgAnimation !== 'wave') {
-      document.body.classList.add(`bg-anim-${bgAnimation}`)
-    }
-    localStorage.setItem('bg-animation', bgAnimation)
-  }, [bgAnimation])
 
   const saveTheme = async () => {
     if (!user) return
@@ -312,33 +260,6 @@ Example custom animation:
           </button>
         )}
         {!user && <p className="muted">Theme saves locally unless you sign in.</p>}
-      </div>
-      <div className="card">
-        <h3>Background Animation</h3>
-        <label className="field">
-          Animation Style
-          <select value={bgAnimation} onChange={(e) => setBgAnimation(e.target.value)}>
-            {backgroundAnimations.map((anim) => (
-              <option key={anim.id} value={anim.id}>
-                {anim.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <p className="muted">
-          Choose an animated background effect. Select "None" or enable Performance Mode below to disable animations.
-        </p>
-        <label className="field" style={{flexDirection: 'row', alignItems: 'center', gap: '12px', marginTop: '12px'}}>
-          <input
-            type="checkbox"
-            checked={performanceMode}
-            onChange={(e) => setPerformanceMode(e.target.checked)}
-          />
-          <span>Performance Mode (disables all animations)</span>
-        </label>
-        <p className="muted">
-          Enable this if you experience lag, especially when running other apps like YouTube.
-        </p>
       </div>
       <div className="card">
         <h3>Background image</h3>

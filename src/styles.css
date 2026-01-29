@@ -394,66 +394,7 @@ body{
 		position:relative;
 		z-index:2;
 	}
-	.scene__glass{
-		position:absolute;
-		inset:0;
-		z-index:1;
-		pointer-events:none;
-		--ball-speed: 10s;
-		--ball-opacity: 0.35;
-		--ball-blur: 0.6px;
-		--ball-size: 120px;
-	}
-	.scene__glass::before{
-		content:"";
-		position:absolute;
-		inset:-20%;
-		background:
-			radial-gradient(circle, rgba(255,255,255,0.55) 0 10px, rgba(255,255,255,0) 12px);
-		background-size: var(--ball-size) var(--ball-size);
-		opacity:var(--ball-opacity);
-		filter: blur(var(--ball-blur));
-		mix-blend-mode:soft-light;
-		animation:balls-wave var(--ball-speed) ease-in-out infinite;
-	}
-	.scene__glass::after{
-		content:"";
-		position:absolute;
-		inset:0;
-		background:
-			radial-gradient(circle, rgba(255,255,255,0.35) 0 8px, rgba(255,255,255,0) 10px);
-		background-size: calc(var(--ball-size) * 0.7) calc(var(--ball-size) * 0.7);
-		opacity:0.2;
-		mix-blend-mode:overlay;
-		animation:balls-domino calc(var(--ball-speed) * 1.2) linear infinite;
-	}
-	@keyframes balls-wave{
-		0%{
-			transform:translate3d(0,0,0);
-			background-position: 0 0;
-		}
-		50%{
-			transform:translate3d(-3%,2%,0);
-			background-position: calc(var(--ball-size) * 0.6) calc(var(--ball-size) * 0.35);
-		}
-		100%{
-			transform:translate3d(0,0,0);
-			background-position: 0 0;
-		}
-	}
-	@keyframes balls-domino{
-		0%{background-position: 0 0}
-		100%{background-position: calc(var(--ball-size) * 1.2) calc(var(--ball-size) * -0.6)}
-	}
-	@keyframes dots-drift{
-		0%{background-position:center,center,center,0 0}
-		50%{background-position:center,center,center,60px 40px}
-		100%{background-position:center,center,center,120px 80px}
-	}
-	@keyframes dots-pulse{
-		0%,100%{opacity:0.8}
-		50%{opacity:1}
-	}
+	/* Background animations removed for performance - focus on smooth video playback */
 	h1,h2,h3,h4{font-family:'Space Grotesk',ui-sans-serif,system-ui;font-weight:600;letter-spacing:-0.02em}
 	*{box-sizing:border-box}
 	a{color:var(--accent)}
@@ -836,14 +777,19 @@ body{
 		font-weight:700;
 		color:var(--pill-text);
 	}
-	.player-meta{display:flex;align-items:center;gap:8px;flex:1}
+	.player-meta{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
 	.player-actions{display:flex;gap:6px;flex-wrap:wrap}
 	.player-actions .btn{padding:4px 10px;font-size:0.75rem}
 	.btn.danger{
 		color:var(--danger);
 		border-color:rgba(239,68,68,0.5);
 	}
-	.player-name{font-weight:700}
+	.player-name{
+		font-weight:700;
+		overflow:hidden;
+		text-overflow:ellipsis;
+		white-space:nowrap;
+	}
 	.pill{
 		font-size:0.75rem;
 		padding:4px 10px;
@@ -1349,203 +1295,7 @@ body{
 	.board-grid[data-mobile="side"] .side-col{display:flex}
 }
 
-/* Performance Mode - Disable expensive animations */
-.performance-mode .scene__glass,
-.performance-mode .scene__glass::before,
-.performance-mode .scene__glass::after {
-	display: none !important;
-}
-
-/* Background Animation: None */
-.bg-anim-none .scene__glass,
-.bg-anim-none .scene__glass::before,
-.bg-anim-none .scene__glass::after {
-	display: none !important;
-}
-
-/* Background Animation: Spiral */
-.bg-anim-spiral .scene__glass::before {
-	animation: balls-spiral 12s ease-in-out infinite;
-}
-.bg-anim-spiral .scene__glass::after {
-	animation: balls-spiral-reverse 15s ease-in-out infinite;
-}
-@keyframes balls-spiral {
-	0% {
-		transform: translate3d(0, 0, 0) rotate(0deg);
-		background-position: 0 0;
-	}
-	50% {
-		transform: translate3d(-5%, 3%, 0) rotate(180deg);
-		background-position: calc(var(--ball-size) * 0.8) calc(var(--ball-size) * 0.5);
-	}
-	100% {
-		transform: translate3d(0, 0, 0) rotate(360deg);
-		background-position: 0 0;
-	}
-}
-@keyframes balls-spiral-reverse {
-	0% {
-		transform: translate3d(0, 0, 0) rotate(0deg);
-		background-position: 0 0;
-	}
-	50% {
-		transform: translate3d(4%, -2%, 0) rotate(-180deg);
-		background-position: calc(var(--ball-size) * -0.6) calc(var(--ball-size) * -0.4);
-	}
-	100% {
-		transform: translate3d(0, 0, 0) rotate(-360deg);
-		background-position: 0 0;
-	}
-}
-
-/* Background Animation: Ripple */
-.bg-anim-ripple .scene__glass::before {
-	animation: balls-ripple 8s ease-in-out infinite;
-}
-.bg-anim-ripple .scene__glass::after {
-	animation: balls-ripple-offset 10s ease-in-out infinite 2s;
-}
-@keyframes balls-ripple {
-	0%, 100% {
-		transform: scale(1) translate3d(0, 0, 0);
-		opacity: var(--ball-opacity);
-	}
-	50% {
-		transform: scale(1.15) translate3d(-2%, 1%, 0);
-		opacity: calc(var(--ball-opacity) * 1.4);
-	}
-}
-@keyframes balls-ripple-offset {
-	0%, 100% {
-		transform: scale(1) translate3d(0, 0, 0);
-		opacity: 0.2;
-	}
-	50% {
-		transform: scale(0.9) translate3d(3%, -2%, 0);
-		opacity: 0.3;
-	}
-}
-
-/* Background Animation: Drift */
-.bg-anim-drift .scene__glass::before {
-	animation: balls-drift 20s linear infinite;
-}
-.bg-anim-drift .scene__glass::after {
-	animation: balls-drift-slow 25s linear infinite;
-}
-@keyframes balls-drift {
-	0% {
-		transform: translate3d(0, 0, 0);
-		background-position: 0 0;
-	}
-	100% {
-		transform: translate3d(-10%, 5%, 0);
-		background-position: calc(var(--ball-size) * 2) calc(var(--ball-size) * 1);
-	}
-}
-@keyframes balls-drift-slow {
-	0% {
-		transform: translate3d(0, 0, 0);
-		background-position: 0 0;
-	}
-	100% {
-		transform: translate3d(8%, -4%, 0);
-		background-position: calc(var(--ball-size) * -1.5) calc(var(--ball-size) * -0.8);
-	}
-}
-
-/* Background Animation: Pulse */
-.bg-anim-pulse .scene__glass::before {
-	animation: balls-pulse 6s ease-in-out infinite;
-}
-.bg-anim-pulse .scene__glass::after {
-	animation: balls-pulse-alt 7s ease-in-out infinite 1s;
-}
-@keyframes balls-pulse {
-	0%, 100% {
-		transform: scale(1);
-		opacity: var(--ball-opacity);
-		filter: blur(var(--ball-blur));
-	}
-	50% {
-		transform: scale(1.2);
-		opacity: calc(var(--ball-opacity) * 1.6);
-		filter: blur(calc(var(--ball-blur) * 1.5));
-	}
-}
-@keyframes balls-pulse-alt {
-	0%, 100% {
-		transform: scale(1);
-		opacity: 0.2;
-		filter: blur(calc(var(--ball-blur) * 0.8));
-	}
-	50% {
-		transform: scale(0.85);
-		opacity: 0.35;
-		filter: blur(var(--ball-blur));
-	}
-}
-
-/* Background Animation: Flow */
-.bg-anim-flow .scene__glass::before {
-	animation: balls-flow 16s ease-in-out infinite;
-}
-.bg-anim-flow .scene__glass::after {
-	animation: balls-flow-counter 14s ease-in-out infinite;
-}
-@keyframes balls-flow {
-	0% {
-		transform: translate3d(0, 0, 0);
-		background-position: 0 0;
-	}
-	25% {
-		transform: translate3d(-4%, 2%, 0);
-		background-position: calc(var(--ball-size) * 0.5) calc(var(--ball-size) * 0.3);
-	}
-	50% {
-		transform: translate3d(-6%, -1%, 0);
-		background-position: calc(var(--ball-size) * 0.8) 0;
-	}
-	75% {
-		transform: translate3d(-3%, -3%, 0);
-		background-position: calc(var(--ball-size) * 0.4) calc(var(--ball-size) * -0.2);
-	}
-	100% {
-		transform: translate3d(0, 0, 0);
-		background-position: 0 0;
-	}
-}
-@keyframes balls-flow-counter {
-	0% {
-		transform: translate3d(0, 0, 0);
-		background-position: 0 0;
-	}
-	25% {
-		transform: translate3d(3%, -1%, 0);
-		background-position: calc(var(--ball-size) * -0.4) calc(var(--ball-size) * -0.2);
-	}
-	50% {
-		transform: translate3d(5%, 2%, 0);
-		background-position: calc(var(--ball-size) * -0.7) calc(var(--ball-size) * 0.3);
-	}
-	75% {
-		transform: translate3d(2%, 3%, 0);
-		background-position: calc(var(--ball-size) * -0.3) calc(var(--ball-size) * 0.4);
-	}
-	100% {
-		transform: translate3d(0, 0, 0);
-		background-position: 0 0;
-	}
-}
-
-/* Respect user's OS preference for reduced motion */
-@media (prefers-reduced-motion: reduce) {
-	.scene__glass::before,
-	.scene__glass::after {
-		animation: none !important;
-	}
-}
+/* Background animations removed - clean, fast, performant */
 
 /* Theme Builder */
 .theme-builder {
