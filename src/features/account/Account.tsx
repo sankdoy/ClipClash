@@ -224,55 +224,81 @@ export default function Account() {
         <>
           <div className="card">
             <h3>Profile</h3>
-            <p className="muted">Signed in as {user.email}</p>
             <label className="field">
               Username
               <input value={username} onChange={(e) => setUsername(e.target.value)} />
             </label>
             <label className="field">
-              Profile picture
-              <div
-                className={`upload-drop ${avatarDragOver ? 'active' : ''}`}
-                onDragOver={(event) => {
-                  event.preventDefault()
-                  setAvatarDragOver(true)
-                }}
-                onDragLeave={() => setAvatarDragOver(false)}
-                onDrop={onAvatarDrop}
-              >
-                <input
-                  type="file"
-                  accept="image/*"
-                  ref={avatarInputRef}
-                  onClick={() => {
-                    if (avatarInputRef.current) {
-                      avatarInputRef.current.value = ''
-                    }
-                  }}
-                  onChange={(event) => {
-                    const file = event.target.files?.[0]
-                    if (file) readAvatarFile(file)
-                    if (avatarInputRef.current) {
-                      avatarInputRef.current.value = ''
-                    }
-                  }}
-                />
-                <p className="muted">Drag an image here or click to choose a file.</p>
-              </div>
+              Email
+              <input value={user.email} disabled style={{opacity: 0.6, cursor: 'not-allowed'}} />
             </label>
-            {avatarUrl && (
-              <div className="avatar-preview">
-                <img src={avatarUrl} alt="Avatar preview" />
-                <button className="btn ghost" onClick={() => setAvatarUrl('')}>
-                  Remove avatar
-                </button>
+            <div className="field">
+              <label style={{marginBottom: '8px'}}>Profile picture</label>
+              <div style={{display: 'flex', gap: '16px', alignItems: 'flex-start'}}>
+                {avatarUrl && (
+                  <div style={{flexShrink: 0}}>
+                    <img
+                      src={avatarUrl}
+                      alt="Avatar"
+                      style={{
+                        width: '80px',
+                        height: '80px',
+                        borderRadius: '50%',
+                        objectFit: 'cover',
+                        border: '2px solid var(--border)'
+                      }}
+                    />
+                  </div>
+                )}
+                <div style={{flex: 1}}>
+                  <div
+                    className={`upload-drop ${avatarDragOver ? 'active' : ''}`}
+                    style={{minHeight: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
+                    onDragOver={(event) => {
+                      event.preventDefault()
+                      setAvatarDragOver(true)
+                    }}
+                    onDragLeave={() => setAvatarDragOver(false)}
+                    onDrop={onAvatarDrop}
+                  >
+                    <input
+                      type="file"
+                      accept="image/*"
+                      ref={avatarInputRef}
+                      onClick={() => {
+                        if (avatarInputRef.current) {
+                          avatarInputRef.current.value = ''
+                        }
+                      }}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0]
+                        if (file) readAvatarFile(file)
+                        if (avatarInputRef.current) {
+                          avatarInputRef.current.value = ''
+                        }
+                      }}
+                    />
+                    <p className="muted" style={{margin: 0}}>
+                      {avatarUrl ? 'Click to change' : 'Click or drag image here'}
+                    </p>
+                  </div>
+                  {avatarUrl && (
+                    <button
+                      className="btn ghost"
+                      onClick={() => setAvatarUrl('')}
+                      style={{marginTop: '8px', width: '100%'}}
+                    >
+                      Remove avatar
+                    </button>
+                  )}
+                </div>
               </div>
-            )}
-            <div className="room-controls">
-              <button className="btn primary" onClick={saveProfile}>
-                Save profile
+            </div>
+            <div style={{display: 'flex', gap: '12px', marginTop: '16px'}}>
+              <button className="btn primary" onClick={saveProfile} style={{flex: 1}}>
+                Save changes
               </button>
-              <button className="btn ghost" onClick={doLogout}>
+              <button className="btn outline" onClick={doLogout}>
                 Log out
               </button>
             </div>
