@@ -6,10 +6,13 @@ export type ThemePack = {
 }
 
 export const themePacks: ThemePack[] = [
-  { id: 'neonTikTok', label: 'Neon TikTok' },
-  { id: 'clash', label: 'Classic' },
-  { id: 'neon', label: 'Neon Mint' },
-  { id: 'sunset', label: 'Sunset Coral' },
-  { id: 'mono', label: 'Mono Ink' },
-  { id: 'custom', label: 'Custom CSS' }
+  { id: 'clash', label: 'Default' },
+  { id: 'neonTikTok', label: 'Neon' },
+  { id: 'neon', label: 'Mint' },
+  { id: 'sunset', label: 'Sunset' },
+  { id: 'ocean', label: 'Ocean' },
+  { id: 'forest', label: 'Forest' },
+  { id: 'royal', label: 'Royal' },
+  { id: 'mono', label: 'Monochrome' },
+  { id: 'custom', label: 'Custom' }
 ]

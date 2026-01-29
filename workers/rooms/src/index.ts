@@ -969,7 +969,7 @@ export class RoomsDOv2 implements DurableObject {
 
         this.requiredDoneIds = new Set(
           Array.from(this.players.values())
-            .filter((player) => player.isConnected && player.id !== this.hostId)
+            .filter((player) => player.isConnected)
             .map((player) => player.id)
         )
         for (const id of this.players.keys()) {
@@ -2373,7 +2373,7 @@ function normalizeRoundState(round: unknown): RoundState | null {
   if (!candidate.categoryId || !candidate.categoryName || !Array.isArray(candidate.entries)) return null
 
   const stage = candidate.stage === 'playback' || candidate.stage === 'vote' ? candidate.stage : 'vote'
-  const playbackIndex = Number.isFinite(candidate.playbackIndex) ? Math.max(0, Math.floor(candidate.playbackIndex)) : 0
+  const playbackIndex = Number.isFinite(candidate.playbackIndex) ? Math.max(0, Math.floor(candidate.playbackIndex!)) : 0
   const remainingSeconds =
     candidate.remainingSeconds === null || Number.isFinite(candidate.remainingSeconds)
       ? (candidate.remainingSeconds as number | null)

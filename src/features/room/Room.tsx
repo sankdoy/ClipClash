@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { getMe } from '../../utils/auth'
+import { generateRandomUsername } from '../../utils/username'
 import type {
   Category,
   ChatMessage,
@@ -164,9 +165,8 @@ export default function Room() {
         isTestPlayer || isAudienceView ? null : window.localStorage.getItem(`tto:sessionToken:${roomId}`)
       const storedName =
         isTestPlayer || isAudienceView ? '' : window.localStorage.getItem(`tto:displayName:${roomId}`) ?? ''
-      const playerLabel = new URLSearchParams(window.location.search).get('player')
       const autoName =
-        playerLabel && !storedName && !displayName ? `Player ${playerLabel}` : null
+        !storedName && !displayName ? generateRandomUsername() : null
       const audienceFromUrl = new URLSearchParams(window.location.search).get('audienceCode') ?? undefined
       const publicFlag = new URLSearchParams(window.location.search).get('public')
       const visibility = publicFlag === '1' ? 'public' : 'private'
@@ -941,20 +941,6 @@ export default function Room() {
                 )
               )}
             </div>
-            <label className="field">
-              Display name
-              <input
-                type="text"
-                placeholder="Pick a name"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                disabled={nameLocked}
-              />
-            </label>
-            {nameLocked && <p className="muted">Using your account name. Update it in Account settings.</p>}
-            <button className="btn outline" onClick={sendHello} disabled={!displayName.trim() || nameLocked}>
-              Update name
-            </button>
           </div>
         </aside>
 
@@ -1722,14 +1708,27 @@ function buildShareSummary(scoreboard: ScoreboardEntry[], history: RoundHistoryE
 }
 
 function extractTikTokId(url: string) {
-  const match = url.match(/\/video\/(\d+)/)
-  return match?.[1] ?? null
+  // Handle various TikTok URL formats
+  const patterns = [
+    /tiktok\.com\/@[\w.-]+\/video\/(\d+)/,
+    /tiktok\.com\/v\/(\d+)/,
+    /vm\.tiktok\.com\/(\w+)/,
+    /vt\.tiktok\.com\/(\w+)/,
+    /\/video\/(\d+)/
+  ]
+
+  for (const pattern of patterns) {
+    const match = url.match(pattern)
+    if (match?.[1]) return match[1]
+  }
+
+  return null
 }
 
 function TikTokEmbed({ url }: { url: string }) {
   const id = extractTikTokId(url)
   if (!id) {
-    return <p className="muted">Unable to embed this TikTok.</p>
+    return <p className="muted">Unable to embed this TikTok. Make sure you're using a direct TikTok video link.</p>
   }
   return (
     <div className="tiktok-frame">
@@ -1738,8 +1737,10 @@ function TikTokEmbed({ url }: { url: string }) {
         className="tiktok-embed"
         title={`TikTok ${id}`}
         src={`https://www.tiktok.com/embed/v2/${id}?autoplay=1`}
-        allow="autoplay; fullscreen"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+        allowFullScreen
         loading="lazy"
+        sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
       />
     </div>
   )

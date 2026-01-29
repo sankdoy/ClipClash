@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useRef, useState } from 'react'
 import { ThemeContext } from '../../ThemeProvider'
 import { themePacks, ThemeMode } from '../../theme'
 import { getMe } from '../../utils/auth'
+import ThemeBuilder from './ThemeBuilder'
 
 type User = {
   id: string
@@ -10,11 +11,24 @@ type User = {
   avatar_url?: string
 }
 
+const backgroundAnimations = [
+  { id: 'wave', label: 'Wave (Default)' },
+  { id: 'spiral', label: 'Spiral' },
+  { id: 'ripple', label: 'Ripple' },
+  { id: 'drift', label: 'Drift' },
+  { id: 'pulse', label: 'Pulse' },
+  { id: 'flow', label: 'Flow' },
+  { id: 'none', label: 'None' }
+]
+
 export default function Settings() {
   const [status, setStatus] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [performanceMode, setPerformanceMode] = useState(() => {
     return localStorage.getItem('performance-mode') === 'true'
+  })
+  const [bgAnimation, setBgAnimation] = useState(() => {
+    return localStorage.getItem('bg-animation') || 'wave'
   })
   const {
     theme,
@@ -32,6 +46,8 @@ export default function Settings() {
   const [previousMode, setPreviousMode] = useState<ThemeMode | null>(null)
   const [previousCss, setPreviousCss] = useState<string | null>(null)
   const [bgDragOver, setBgDragOver] = useState(false)
+  const [showVisualBuilder, setShowVisualBuilder] = useState(false)
+  const [showAdvancedEditor, setShowAdvancedEditor] = useState(false)
   const bgInputRef = useRef<HTMLInputElement | null>(null)
   const baseTemplate = `:root {
   --bg: #0f1116;
@@ -55,10 +71,25 @@ export default function Settings() {
 }
 
 /* Tips:
-- --bg / --bg-end control page background
-- --panel / --card / --card-2 control surfaces
-- --text / --text-muted / --text-dim control readability
-- --accent / --accent-hover control buttons + highlights */`
+- --bg / --bg-end: Page background gradient
+- --panel / --card / --card-2: Surface colors
+- --text / --text-muted / --text-dim: Text hierarchy
+- --accent / --accent-hover: Interactive elements
+
+Background Animation Variables (optional):
+- --ball-speed: Animation duration (default: 10s)
+- --ball-opacity: Orb opacity (default: 0.35)
+- --ball-blur: Blur intensity (default: 0.6px)
+- --ball-size: Orb size (default: 120px)
+
+Example custom animation:
+.scene__glass {
+  --ball-speed: 15s;
+  --ball-opacity: 0.5;
+  --ball-blur: 1px;
+  --ball-size: 200px;
+}
+*/`
 
   useEffect(() => {
     setCustomDraft(customCss)
@@ -81,6 +112,18 @@ export default function Settings() {
       localStorage.setItem('performance-mode', 'false')
     }
   }, [performanceMode])
+
+  useEffect(() => {
+    // Remove all animation classes first
+    backgroundAnimations.forEach(anim => {
+      document.body.classList.remove(`bg-anim-${anim.id}`)
+    })
+    // Add the selected animation class
+    if (bgAnimation && bgAnimation !== 'wave') {
+      document.body.classList.add(`bg-anim-${bgAnimation}`)
+    }
+    localStorage.setItem('bg-animation', bgAnimation)
+  }, [bgAnimation])
 
   const saveTheme = async () => {
     if (!user) return
@@ -120,6 +163,13 @@ export default function Settings() {
     setCustomCss(customDraft)
     setPreviewing(false)
     setStatus('Custom theme applied.')
+  }
+
+  const applyBuilderTheme = (css: string) => {
+    setTheme('custom')
+    setCustomCss(css)
+    setCustomDraft(css)
+    setPreviewing(false)
   }
 
   const resetTheme = () => {
@@ -264,14 +314,27 @@ export default function Settings() {
         {!user && <p className="muted">Theme saves locally unless you sign in.</p>}
       </div>
       <div className="card">
-        <h3>Performance</h3>
-        <label className="field" style={{flexDirection: 'row', alignItems: 'center', gap: '12px'}}>
+        <h3>Background Animation</h3>
+        <label className="field">
+          Animation Style
+          <select value={bgAnimation} onChange={(e) => setBgAnimation(e.target.value)}>
+            {backgroundAnimations.map((anim) => (
+              <option key={anim.id} value={anim.id}>
+                {anim.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="muted">
+          Choose an animated background effect. Select "None" or enable Performance Mode below to disable animations.
+        </p>
+        <label className="field" style={{flexDirection: 'row', alignItems: 'center', gap: '12px', marginTop: '12px'}}>
           <input
             type="checkbox"
             checked={performanceMode}
             onChange={(e) => setPerformanceMode(e.target.checked)}
           />
-          <span>Performance Mode (disables animated background)</span>
+          <span>Performance Mode (disables all animations)</span>
         </label>
         <p className="muted">
           Enable this if you experience lag, especially when running other apps like YouTube.
@@ -332,48 +395,77 @@ export default function Settings() {
         )}
       </div>
       <div className="card">
-        <h3>Custom theme (advanced)</h3>
+        <h3>Custom Theme</h3>
         <p className="muted">
-          Warning: only edit this if you know what you are doing. Bad CSS can make the UI unreadable.
-          Preview before applying. If you break things, click Reset Theme or clear site data.
+          Create your own theme by customizing colors and animations. Choose between a visual builder or advanced CSS editor.
         </p>
-        <p className="muted">
-          Custom CSS is stored locally in this browser. To recover if the page is broken, open DevTools and run:{' '}
-          <code>
-            localStorage.removeItem('cc_custom_theme'); localStorage.removeItem('cc_theme');
-            localStorage.removeItem('cc_mode');
-          </code>{' '}
-          then refresh.
-        </p>
-        <label className="field">
-          Custom CSS (edit variables only)
-          <textarea
-            className="theme-editor"
-            value={customDraft}
-            onChange={(e) => setCustomDraft(e.target.value)}
-            placeholder={baseTemplate}
+
+        {!showVisualBuilder && !showAdvancedEditor && (
+          <div className="room-controls">
+            <button className="btn primary" onClick={() => setShowVisualBuilder(true)}>
+              Open Visual Builder (Recommended)
+            </button>
+            <button className="btn outline" onClick={() => setShowAdvancedEditor(true)}>
+              Advanced CSS Editor
+            </button>
+          </div>
+        )}
+
+        {showVisualBuilder && (
+          <ThemeBuilder
+            onApply={(css) => {
+              applyBuilderTheme(css)
+              setShowVisualBuilder(false)
+              setStatus('Custom theme applied from visual builder.')
+            }}
+            onCancel={() => setShowVisualBuilder(false)}
           />
-        </label>
-        <div className="room-controls">
-          <button className="btn ghost" onClick={loadTemplate}>
-            Load base template
+        )}
+
+        {showAdvancedEditor && (
+          <>
+            <p className="muted">
+              <strong>⚠️ Warning:</strong> Invalid CSS can break the UI. If things break, run this in DevTools:{' '}
+              <code>localStorage.removeItem('cc_custom_theme'); location.reload();</code>
+            </p>
+            <label className="field">
+              Custom CSS
+              <textarea
+                className="theme-editor"
+                value={customDraft}
+                onChange={(e) => setCustomDraft(e.target.value)}
+                placeholder={baseTemplate}
+                spellCheck={false}
+              />
+            </label>
+            <div className="room-controls">
+              <button className="btn ghost" onClick={loadTemplate}>
+                Load base template
+              </button>
+              {!previewing ? (
+                <button className="btn outline" onClick={startPreview}>
+                  Preview
+                </button>
+              ) : (
+                <button className="btn outline" onClick={cancelPreview}>
+                  Cancel preview
+                </button>
+              )}
+              <button className="btn primary" onClick={applyCustomTheme}>
+                Apply custom theme
+              </button>
+              <button className="btn ghost" onClick={() => setShowAdvancedEditor(false)}>
+                Close editor
+              </button>
+            </div>
+          </>
+        )}
+
+        {(showVisualBuilder || showAdvancedEditor) && (
+          <button className="btn ghost" onClick={resetTheme} style={{ marginTop: '12px' }}>
+            Reset to Default Theme
           </button>
-          {!previewing ? (
-            <button className="btn outline" onClick={startPreview}>
-              Preview
-            </button>
-          ) : (
-            <button className="btn outline" onClick={cancelPreview}>
-              Cancel preview
-            </button>
-          )}
-          <button className="btn primary" onClick={applyCustomTheme}>
-            Apply custom theme
-          </button>
-          <button className="btn ghost" onClick={resetTheme}>
-            Reset theme
-          </button>
-        </div>
+        )}
       </div>
       {status && <p className="muted">{status}</p>}
     </div>
