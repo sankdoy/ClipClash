@@ -621,14 +621,6 @@ body{
 		border:1px solid var(--border);
 		box-shadow:var(--shadow-soft);
 	}
-	@media (prefers-reduced-motion: reduce){
-		.scene__glass::before,
-		.scene__glass::after{ animation:none; }
-	}
-	@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))){
-		.scene__glass::before{ opacity: 0.25; mix-blend-mode: overlay; }
-		.scene__glass::after{ opacity: 0.12; }
-	}
 	.helper{margin:0;color:var(--text-dim);font-size:0.85rem}
 	.room-list{display:flex;flex-direction:column;gap:10px}
 	.room-chip{

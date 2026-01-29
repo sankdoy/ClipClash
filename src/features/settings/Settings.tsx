@@ -318,7 +318,7 @@ export default function Settings() {
       <div className="card">
         <h3>Custom Theme</h3>
         <p className="muted">
-          Create your own theme by customizing colors and animations. Choose between a visual builder or advanced CSS editor.
+          Create your own theme by customizing colors. Choose between a visual builder or advanced CSS editor.
         </p>
 
         {!showVisualBuilder && !showAdvancedEditor && (

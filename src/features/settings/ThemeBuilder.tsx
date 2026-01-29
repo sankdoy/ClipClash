@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 
 type ThemeColors = {
   bg: string
@@ -10,13 +10,6 @@ type ThemeColors = {
   textMuted: string
   accent: string
   accentHover: string
-}
-
-type AnimationSettings = {
-  speed: number
-  opacity: number
-  blur: number
-  size: number
 }
 
 type ThemeBuilderProps = {
@@ -36,24 +29,11 @@ const defaultColors: ThemeColors = {
   accentHover: '#ff9a43'
 }
 
-const defaultAnimation: AnimationSettings = {
-  speed: 10,
-  opacity: 35,
-  blur: 0.6,
-  size: 120
-}
-
 export default function ThemeBuilder({ onApply, onCancel }: ThemeBuilderProps) {
   const [colors, setColors] = useState<ThemeColors>(defaultColors)
-  const [animation, setAnimation] = useState<AnimationSettings>(defaultAnimation)
-  const [activeTab, setActiveTab] = useState<'colors' | 'animation'>('colors')
 
   const updateColor = (key: keyof ThemeColors, value: string) => {
     setColors(prev => ({ ...prev, [key]: value }))
-  }
-
-  const updateAnimation = (key: keyof AnimationSettings, value: number) => {
-    setAnimation(prev => ({ ...prev, [key]: value }))
   }
 
   const generateCSS = () => {
@@ -71,13 +51,6 @@ export default function ThemeBuilder({ onApply, onCancel }: ThemeBuilderProps) {
   --accent-hover: ${colors.accentHover};
   --accent-contrast: ${adjustBrightness(colors.accent, 0.15)};
   --focus-ring: ${hexToRgba(colors.accentHover, 0.45)};
-}
-
-.scene__glass {
-  --ball-speed: ${animation.speed}s;
-  --ball-opacity: ${animation.opacity / 100};
-  --ball-blur: ${animation.blur}px;
-  --ball-size: ${animation.size}px;
 }`
   }
 
@@ -87,83 +60,29 @@ export default function ThemeBuilder({ onApply, onCancel }: ThemeBuilderProps) {
 
   const resetToDefaults = () => {
     setColors(defaultColors)
-    setAnimation(defaultAnimation)
   }
 
   return (
     <div className="theme-builder">
-      <div className="theme-builder-tabs">
-        <button
-          className={`tab-btn ${activeTab === 'colors' ? 'active' : ''}`}
-          onClick={() => setActiveTab('colors')}
-        >
-          Colors
-        </button>
-        <button
-          className={`tab-btn ${activeTab === 'animation' ? 'active' : ''}`}
-          onClick={() => setActiveTab('animation')}
-        >
-          Animation
-        </button>
-      </div>
-
       <div className="theme-builder-content">
-        {activeTab === 'colors' ? (
-          <div className="theme-builder-section">
-            <h4>Background</h4>
-            <ColorInput label="Background Start" value={colors.bg} onChange={(v) => updateColor('bg', v)} />
-            <ColorInput label="Background End" value={colors.bgEnd} onChange={(v) => updateColor('bgEnd', v)} />
+        <div className="theme-builder-section">
+          <h4>Background</h4>
+          <ColorInput label="Background Start" value={colors.bg} onChange={(v) => updateColor('bg', v)} />
+          <ColorInput label="Background End" value={colors.bgEnd} onChange={(v) => updateColor('bgEnd', v)} />
 
-            <h4>Surfaces</h4>
-            <ColorInput label="Panel" value={colors.panel} onChange={(v) => updateColor('panel', v)} />
-            <ColorInput label="Card" value={colors.card} onChange={(v) => updateColor('card', v)} />
-            <ColorInput label="Border" value={colors.border} onChange={(v) => updateColor('border', v)} />
+          <h4>Surfaces</h4>
+          <ColorInput label="Panel" value={colors.panel} onChange={(v) => updateColor('panel', v)} />
+          <ColorInput label="Card" value={colors.card} onChange={(v) => updateColor('card', v)} />
+          <ColorInput label="Border" value={colors.border} onChange={(v) => updateColor('border', v)} />
 
-            <h4>Text</h4>
-            <ColorInput label="Primary Text" value={colors.text} onChange={(v) => updateColor('text', v)} />
-            <ColorInput label="Secondary Text" value={colors.textMuted} onChange={(v) => updateColor('textMuted', v)} />
+          <h4>Text</h4>
+          <ColorInput label="Primary Text" value={colors.text} onChange={(v) => updateColor('text', v)} />
+          <ColorInput label="Secondary Text" value={colors.textMuted} onChange={(v) => updateColor('textMuted', v)} />
 
-            <h4>Accent</h4>
-            <ColorInput label="Accent Color" value={colors.accent} onChange={(v) => updateColor('accent', v)} />
-            <ColorInput label="Accent Hover" value={colors.accentHover} onChange={(v) => updateColor('accentHover', v)} />
-          </div>
-        ) : (
-          <div className="theme-builder-section">
-            <h4>Background Animation</h4>
-            <SliderInput
-              label="Speed (seconds)"
-              value={animation.speed}
-              onChange={(v) => updateAnimation('speed', v)}
-              min={5}
-              max={30}
-              step={1}
-            />
-            <SliderInput
-              label="Opacity (%)"
-              value={animation.opacity}
-              onChange={(v) => updateAnimation('opacity', v)}
-              min={0}
-              max={100}
-              step={5}
-            />
-            <SliderInput
-              label="Blur (pixels)"
-              value={animation.blur}
-              onChange={(v) => updateAnimation('blur', v)}
-              min={0}
-              max={3}
-              step={0.1}
-            />
-            <SliderInput
-              label="Orb Size (pixels)"
-              value={animation.size}
-              onChange={(v) => updateAnimation('size', v)}
-              min={60}
-              max={300}
-              step={10}
-            />
-          </div>
-        )}
+          <h4>Accent</h4>
+          <ColorInput label="Accent Color" value={colors.accent} onChange={(v) => updateColor('accent', v)} />
+          <ColorInput label="Accent Hover" value={colors.accentHover} onChange={(v) => updateColor('accentHover', v)} />
+        </div>
       </div>
 
       <div className="theme-builder-preview">
@@ -235,34 +154,6 @@ function ColorInput({ label, value, onChange }: { label: string; value: string; 
             placeholder="#000000"
           />
         </div>
-      </label>
-    </div>
-  )
-}
-
-function SliderInput({ label, value, onChange, min, max, step }: {
-  label: string
-  value: number
-  onChange: (value: number) => void
-  min: number
-  max: number
-  step: number
-}) {
-  return (
-    <div className="slider-input">
-      <label>
-        <div className="slider-label">
-          <span>{label}</span>
-          <span className="slider-value">{value}</span>
-        </div>
-        <input
-          type="range"
-          value={value}
-          onChange={(e) => onChange(parseFloat(e.target.value))}
-          min={min}
-          max={max}
-          step={step}
-        />
       </label>
     </div>
   )

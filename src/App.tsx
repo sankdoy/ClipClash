@@ -63,7 +63,6 @@ export default function App() {
   return (
     <div className="scene">
       <div className="scene__bg" aria-hidden="true" />
-      <div className="scene__glass" aria-hidden="true" />
       <div className="scene__content">
         <div className="app">
           <div className="board">
