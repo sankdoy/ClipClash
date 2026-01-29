@@ -1,4 +1,4 @@
-export async function onRequest(context: any) {
+export async function onRequest() {
   const payload = {
     ok: true,
     name: 'clipclash',

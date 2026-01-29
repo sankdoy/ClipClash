@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Link, Route, Routes } from 'react-router-dom'
 import Home from './features/home/Home'
 import About from './features/about/About'
@@ -9,8 +9,20 @@ import Donations from './features/donations/Donations'
 import Sponsor from './features/sponsor/Sponsor'
 import Settings from './features/settings/Settings'
 import Owner from './features/owner/Owner'
+import { getMe, User } from './utils/auth'
 
 function Header() {
+  const [user, setUser] = useState<User | null>(null)
+
+  useEffect(() => {
+    getMe().then((data) => {
+      if (data?.user) {
+        setUser(data.user)
+      }
+    })
+  }, [])
+
+  const isOwner = user && user.is_owner === 1
   return (
     <header className="board-header">
       <div className="board-header-left">
@@ -34,9 +46,11 @@ function Header() {
         <Link className="icon-btn" to="/settings">
           Settings
         </Link>
-        <Link className="icon-btn" to="/owner">
-          Owner
-        </Link>
+        {isOwner && (
+          <Link className="icon-btn" to="/owner">
+            Owner
+          </Link>
+        )}
         <Link className="icon-btn" to="/account">
           Account
         </Link>

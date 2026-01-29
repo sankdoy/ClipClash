@@ -572,8 +572,6 @@ export default function Room() {
     ws.send(JSON.stringify({ type: 'kick_player', playerId }))
   }
 
-  // No "rotate invite" anymore: roomId is the only join code.
-
   const closeRoom = () => {
     const ws = socketRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return
@@ -1568,7 +1566,6 @@ export default function Room() {
             <span className="btn-icon">INV</span>
             Invite
           </button>
-          {/* invite rotation removed: roomId is the join code */}
           {actionNotice && <span className="muted">{actionNotice}</span>}
         </div>
         <div className="actions-right">

@@ -1,4 +1,5 @@
 import { json, logEvent, Env } from '../_helpers'
+import { sendAuthCodeEmail } from '../../_lib/email'
 
 function hashCode(code: string) {
   return crypto.subtle.digest('SHA-256', new TextEncoder().encode(code))
@@ -24,14 +25,24 @@ export async function onRequestPost({ request, env }: { request: Request; env: E
     .bind(email, hashHex, now.toISOString(), expires.toISOString())
     .run()
 
-  // NOTE: Email delivery will be wired later (MailChannels + owned domain).
-  // For now, this endpoint only issues a code.
-  await logEvent(env, {
-    level: 'info',
-    eventType: 'auth_request',
-    message: 'Login code issued (not emailed yet).',
-    meta: { email }
-  })
+  // Send email (dev mode aware - will log to console in dev, send real email in prod)
+  try {
+    await sendAuthCodeEmail(env, email, code)
+    await logEvent(env, {
+      level: 'info',
+      eventType: 'auth_request',
+      message: 'Login code issued and email sent.',
+      meta: { email }
+    })
+  } catch (error) {
+    await logEvent(env, {
+      level: 'error',
+      eventType: 'auth_request',
+      message: `Failed to send auth code email: ${error}`,
+      meta: { email }
+    })
+    // Don't fail the request - code is still in DB
+  }
 
   return json({ ok: true })
 }

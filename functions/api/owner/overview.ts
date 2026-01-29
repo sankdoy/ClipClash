@@ -75,20 +75,20 @@ export async function onRequestGet({ request, env }: { request: Request; env: En
     ok: true,
     since: { iso: sinceIso, ms: sinceMs },
     usage: {
-      rooms_today: Number((rooms24h as any)?.value ?? 0),
-      players_today: Number((players24h as any)?.value ?? 0),
-      accounts_today: Number((accounts24h as any)?.value ?? 0)
+      rooms_today: Number(rooms24h?.value ?? 0),
+      players_today: Number(players24h?.value ?? 0),
+      accounts_today: Number(accounts24h?.value ?? 0)
     },
     revenue: {
       payments_today: {
-        count: Number((paymentsToday as any)?.count ?? 0),
-        total_cents: Number((paymentsToday as any)?.total_cents ?? 0),
-        currency: String((paymentsToday as any)?.currency ?? 'usd')
+        count: Number(paymentsToday?.count ?? 0),
+        total_cents: Number(paymentsToday?.total_cents ?? 0),
+        currency: String(paymentsToday?.currency ?? 'usd')
       },
       donations_today: {
-        count: Number((donationsToday as any)?.count ?? 0),
-        total_cents: Number((donationsToday as any)?.total_cents ?? 0),
-        currency: String((donationsToday as any)?.currency ?? 'usd')
+        count: Number(donationsToday?.count ?? 0),
+        total_cents: Number(donationsToday?.total_cents ?? 0),
+        currency: String(donationsToday?.currency ?? 'usd')
       }
     },
     warnings: warnings.results ?? [],

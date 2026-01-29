@@ -1,7 +1,11 @@
 import pkg from '../../package.json'
 
-export async function onRequest(context: any) {
-  const commit = context.env?.COMMIT ?? null
+type Env = {
+  COMMIT?: string
+}
+
+export async function onRequest({ env }: { env: Env }) {
+  const commit = env?.COMMIT ?? null
   const payload = {
     version: pkg.version || null,
     commit,

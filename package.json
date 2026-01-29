@@ -5,12 +5,14 @@
   "scripts": {
     "dev": "vite",
     "build": "VITE_CJS_IGNORE_WARNING=1 vite build",
+    "build:dev": "VITE_CJS_IGNORE_WARNING=1 vite build --mode development",
     "preview": "vite preview --port 5173",
-    "cf:dev": "npm run build && wrangler pages dev dist",
+    "cf:dev": "npm run build:dev && wrangler pages dev dist --d1 DB=clipclash-db",
     "test": "VITE_CJS_IGNORE_WARNING=1 vitest run",
     "test:rooms-smoke": "node scripts/test-rooms-ws-smoke.mjs",
     "test:sponsor-smoke": "node scripts/test-sponsor-smoke.mjs",
-    "check:boundaries": "node scripts/check-boundaries.mjs"
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "react": "^18.2.0",

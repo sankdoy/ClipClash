@@ -1,3 +1,11 @@
+export type User = {
+  id: string
+  email: string
+  username: string
+  avatar_url?: string
+  is_owner?: number
+}
+
 export async function requestLogin(email: string) {
   const res = await fetch('/api/auth/request', {
     method: 'POST',
@@ -14,13 +22,13 @@ export async function verifyLogin(email: string, code: string) {
     body: JSON.stringify({ email, code })
   })
   if (!res.ok) return null
-  return (await res.json()) as { user?: { id: string; email: string; username: string; avatar_url?: string } }
+  return (await res.json()) as { user?: User }
 }
 
-export async function getMe(): Promise<{ user?: { id: string; email: string; username: string; avatar_url?: string } } | null> {
+export async function getMe(): Promise<{ user?: User } | null> {
   const res = await fetch('/api/auth/me')
   if (!res.ok) return null
-  return (await res.json()) as { user?: { id: string; email: string; username: string; avatar_url?: string } }
+  return (await res.json()) as { user?: User }
 }
 
 export async function updateProfile(username: string, avatarUrl?: string) {

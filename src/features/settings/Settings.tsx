@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useRef, useState } from 'react'
 import { ThemeContext } from '../../ThemeProvider'
-import { themePacks } from '../../theme'
+import { themePacks, ThemeMode } from '../../theme'
 import { getMe } from '../../utils/auth'
 
 type User = {
@@ -26,7 +26,7 @@ export default function Settings() {
   const [customDraft, setCustomDraft] = useState('')
   const [previewing, setPreviewing] = useState(false)
   const [previousTheme, setPreviousTheme] = useState<string | null>(null)
-  const [previousMode, setPreviousMode] = useState<string | null>(null)
+  const [previousMode, setPreviousMode] = useState<ThemeMode | null>(null)
   const [previousCss, setPreviousCss] = useState<string | null>(null)
   const [bgDragOver, setBgDragOver] = useState(false)
   const bgInputRef = useRef<HTMLInputElement | null>(null)
@@ -97,7 +97,7 @@ export default function Settings() {
   const cancelPreview = () => {
     if (!previewing) return
     setTheme(previousTheme ?? 'clash')
-    setMode((previousMode as any) ?? 'system')
+    setMode(previousMode ?? 'system')
     setCustomCss(previousCss ?? '')
     setPreviewing(false)
   }

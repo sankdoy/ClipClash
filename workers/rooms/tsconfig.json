@@ -5,7 +5,8 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "strict": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "downlevelIteration": true
   },
   "include": ["src/**/*.ts"]
 }

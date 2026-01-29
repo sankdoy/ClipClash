@@ -185,7 +185,6 @@ const setDoneSchema = z.object({
 const startHuntSchema = z.object({ type: z.literal('start_hunt') })
 const resetMatchSchema = z.object({ type: z.literal('reset_match') })
 const closeRoomSchema = z.object({ type: z.literal('close_room') })
-const rotateInviteSchema = z.object({ type: z.literal('rotate_invite') })
 const assignHostSchema = z.object({ type: z.literal('assign_host'), playerId: z.string().min(1) })
 const kickPlayerSchema = z.object({ type: z.literal('kick_player'), playerId: z.string().min(1) })
 
@@ -241,7 +240,6 @@ const clientMessageSchema = z.union([
   startHuntSchema,
   resetMatchSchema,
   closeRoomSchema,
-  rotateInviteSchema,
   assignHostSchema,
   kickPlayerSchema,
   updateCategoriesSchema,
@@ -283,10 +281,6 @@ function generateSessionToken() {
   const bytes = new Uint8Array(32)
   crypto.getRandomValues(bytes)
   return base64UrlEncode(bytes)
-}
-
-function generateInviteCode() {
-  return `room-${Math.random().toString(36).slice(2, 8)}`
 }
 
 async function hashHostKey(value: string) {
