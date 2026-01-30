@@ -606,6 +606,60 @@ body{
 		border:1px solid var(--border);
 		background:var(--card-2);
 	}
+	.profile-avatar-section{
+		display:flex;
+		align-items:center;
+		gap:16px;
+		margin-bottom:16px;
+	}
+	.avatar-upload{
+		position:relative;
+		width:120px;
+		height:120px;
+		border-radius:50%;
+		border:2px dashed var(--border);
+		cursor:pointer;
+		overflow:hidden;
+		flex-shrink:0;
+		display:flex;
+		align-items:center;
+		justify-content:center;
+		background:var(--card-2);
+		transition:border-color 0.2s ease;
+	}
+	.avatar-upload:hover{border-color:var(--accent)}
+	.avatar-upload.active{
+		border-color:var(--accent);
+		box-shadow:0 0 0 3px var(--focus-ring);
+	}
+	.avatar-upload img{
+		width:100%;
+		height:100%;
+		object-fit:cover;
+	}
+	.avatar-upload-placeholder{
+		color:var(--text-dim);
+		font-size:2.5rem;
+		font-weight:700;
+	}
+	.avatar-upload-overlay{
+		position:absolute;
+		inset:0;
+		border-radius:50%;
+		background:rgba(0,0,0,0.5);
+		display:flex;
+		align-items:center;
+		justify-content:center;
+		opacity:0;
+		transition:opacity 0.2s ease;
+		color:white;
+	}
+	.avatar-upload:hover .avatar-upload-overlay{opacity:1}
+	.avatar-upload-info{
+		display:flex;
+		flex-direction:column;
+		gap:6px;
+	}
 	.bg-preview{
 		display:flex;
 		align-items:center;

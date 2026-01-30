@@ -5,6 +5,7 @@ export type Env = {
   DB: D1Database
   MAIL_FROM_EMAIL?: string
   MAIL_FROM_NAME?: string
+  SITE_URL?: string
 }
 
 export function json(data: unknown, init: ResponseInit = {}) {

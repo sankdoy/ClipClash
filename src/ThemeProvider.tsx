@@ -56,7 +56,7 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
 
   useEffect(() => {
     applyTheme(theme, mode)
-    if (theme == 'custom' && customCss) {
+    if (theme === 'custom' && customCss) {
       applyCustomTheme(customCss)
     } else {
       clearCustomTheme()

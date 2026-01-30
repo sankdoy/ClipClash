@@ -1,6 +1,9 @@
 name = "clipclash-pages"
 compatibility_date = "2026-01-16"
 
+[vars]
+SITE_URL = "http://localhost:5173"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "clipclash-db"

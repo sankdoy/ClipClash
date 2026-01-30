@@ -27,8 +27,15 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     define: {
-      // expose package version at build time if needed
       __APP_VERSION__: JSON.stringify(process.env.npm_package_version || '0.0.0')
+    },
+    server: {
+      proxy: {
+        '/api': {
+          target: 'http://localhost:8788',
+          changeOrigin: true
+        }
+      }
     }
   }
 })

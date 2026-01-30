@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { getMe, logout, requestLogin, updateProfile, verifyLogin } from '../../utils/auth'
+import { getMe, login, logout, register, forgotPassword, resetPassword, updateProfile } from '../../utils/auth'
 
 type User = {
   id: string
@@ -8,9 +8,14 @@ type User = {
   avatar_url?: string
 }
 
+type AuthMode = 'login' | 'register' | 'forgot' | 'reset'
+
 export default function Account() {
+  const [authMode, setAuthMode] = useState<AuthMode>('login')
   const [email, setEmail] = useState('')
-  const [code, setCode] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [resetToken, setResetToken] = useState('')
   const [status, setStatus] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [username, setUsername] = useState('')
@@ -34,6 +39,14 @@ export default function Account() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
+    const token = params.get('reset')
+    if (token) {
+      setResetToken(token)
+      setAuthMode('reset')
+      params.delete('reset')
+      const next = `${window.location.pathname}${params.toString() ? `?${params}` : ''}`
+      window.history.replaceState({}, '', next)
+    }
     if (params.get('audience') === 'success') {
       fetchEntitlements()
       setAudienceStatus('Purchase confirmed. Audience Mode unlocked.')
@@ -49,33 +62,62 @@ export default function Account() {
     }
   }, [])
 
-  const requestCode = async () => {
-    const ok = await requestLogin(email)
-    setStatus(ok ? 'Check your email for the code.' : 'Unable to send code.')
-  }
-
-  const devLogin = () => {
-    const fakeUser = {
-      id: 'dev-user',
-      email: 'edjarv03@gmail.com',
-      username: 'edjarv03'
+  const handleLogin = async () => {
+    setStatus(null)
+    const data = await login(email, password)
+    if (data?.user) {
+      setUser(data.user)
+      setUsername(data.user.username)
+      setAvatarUrl(data.user.avatar_url ?? '')
+      setStatus('Logged in.')
+      setPassword('')
+      fetchEntitlements()
+    } else {
+      setStatus(data?.error ?? 'Login failed.')
     }
-    setUser(fakeUser)
-    setUsername(fakeUser.username)
-    setAvatarUrl('')
-    setStatus('Dev login enabled (local only).')
   }
 
-  const verifyCode = async () => {
-    const data = await verifyLogin(email, code)
-    if (!data?.user) {
-      setStatus('Invalid code.')
+  const handleRegister = async () => {
+    setStatus(null)
+    if (password !== confirmPassword) {
+      setStatus('Passwords do not match.')
       return
     }
-    setUser(data.user)
-    setUsername(data.user.username)
-    setAvatarUrl(data.user.avatar_url ?? '')
-    setStatus('Logged in.')
+    const data = await register(email, password)
+    if (data?.user) {
+      setUser(data.user)
+      setUsername(data.user.username)
+      setAvatarUrl(data.user.avatar_url ?? '')
+      setStatus('Account created.')
+      setPassword('')
+      setConfirmPassword('')
+    } else {
+      setStatus(data?.error ?? 'Registration failed.')
+    }
+  }
+
+  const handleForgotPassword = async () => {
+    setStatus(null)
+    const ok = await forgotPassword(email)
+    setStatus(ok ? 'If an account exists with that email, a reset link has been sent.' : 'Unable to send reset email.')
+  }
+
+  const handleResetPassword = async () => {
+    setStatus(null)
+    if (password !== confirmPassword) {
+      setStatus('Passwords do not match.')
+      return
+    }
+    const data = await resetPassword(resetToken, password)
+    if (data?.ok) {
+      setStatus('Password reset. You can now sign in.')
+      setAuthMode('login')
+      setPassword('')
+      setConfirmPassword('')
+      setResetToken('')
+    } else {
+      setStatus(data?.error ?? 'Reset failed.')
+    }
   }
 
   const saveProfile = async () => {
@@ -84,7 +126,7 @@ export default function Account() {
   }
 
   const fetchEntitlements = async () => {
-    const res = await fetch('/api/entitlements')
+    const res = await fetch('/api/entitlements', { credentials: 'include' })
     if (!res.ok) return
     const data = await res.json()
     setHasAudienceMode(Boolean(data?.hasAudienceMode))
@@ -97,6 +139,7 @@ export default function Account() {
       const res = await fetch('/api/audience', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({})
       })
       const data = await res.json()
@@ -120,10 +163,7 @@ export default function Account() {
     const reader = new FileReader()
     reader.onload = () => {
       const result = typeof reader.result === 'string' ? reader.result : ''
-      if (!result) {
-        setStatus('Image load failed. Try a different file.')
-        return
-      }
+      if (!result) { setStatus('Image load failed.'); return }
       const img = new Image()
       img.onload = () => {
         const maxSize = 256
@@ -134,38 +174,25 @@ export default function Account() {
         canvas.width = width
         canvas.height = height
         const ctx = canvas.getContext('2d')
-        if (!ctx) {
-          setStatus('Image resize failed. Try again.')
-          return
-        }
+        if (!ctx) { setStatus('Image resize failed.'); return }
         ctx.imageSmoothingEnabled = true
         ctx.imageSmoothingQuality = 'high'
         ctx.drawImage(img, 0, 0, width, height)
         const outputType = file.type === 'image/png' || file.type === 'image/webp' ? 'image/png' : 'image/jpeg'
         canvas.toBlob((blob) => {
-          if (!blob) {
-            setStatus('Image conversion failed. Try again.')
-            return
-          }
+          if (!blob) { setStatus('Image conversion failed.'); return }
           const blobReader = new FileReader()
           blobReader.onload = () => {
             const compressed = typeof blobReader.result === 'string' ? blobReader.result : ''
-            if (!compressed) {
-              setStatus('Image conversion failed. Try again.')
-              return
-            }
+            if (!compressed) { setStatus('Image conversion failed.'); return }
             setAvatarUrl(compressed)
             setStatus('Avatar loaded. Save profile to apply.')
-            if (avatarInputRef.current) {
-              avatarInputRef.current.value = ''
-            }
+            if (avatarInputRef.current) avatarInputRef.current.value = ''
           }
           blobReader.readAsDataURL(blob)
         }, outputType, 0.85)
       }
-      img.onerror = () => {
-        setStatus('This image format is not supported. Try PNG or JPG.')
-      }
+      img.onerror = () => setStatus('Image format not supported. Try PNG or JPG.')
       img.src = result
     }
     reader.readAsDataURL(file)
@@ -184,118 +211,209 @@ export default function Account() {
     setStatus('Logged out.')
   }
 
+  const handleKeyDown = (e: React.KeyboardEvent, action: () => void) => {
+    if (e.key === 'Enter') action()
+  }
+
   return (
     <div className="page">
       <h2>Account</h2>
       {!user ? (
-        <div className="card">
-          <h3>Email sign-in</h3>
-          <label className="field">
-            Email
-            <input
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </label>
-          <button className="btn primary" onClick={requestCode} disabled={!email.trim()}>
-            Send code
-          </button>
-          <label className="field">
-            Verification code
-            <input
-              type="text"
-              placeholder="6-digit code"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-            />
-          </label>
-          <button className="btn outline" onClick={verifyCode} disabled={code.length < 6}>
-            Verify
-          </button>
-          {import.meta.env.DEV && (
-            <button className="btn ghost" onClick={devLogin}>
-              Dev login (local only)
-            </button>
+        <>
+          {authMode === 'login' && (
+            <div className="card">
+              <h3>Sign in</h3>
+              <label className="field">
+                Email
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, handleLogin)}
+                />
+              </label>
+              <label className="field">
+                Password
+                <input
+                  type="password"
+                  placeholder="Your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, handleLogin)}
+                />
+              </label>
+              <button className="btn primary" onClick={handleLogin} disabled={!email.trim() || !password}>
+                Sign in
+              </button>
+              <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+                <button className="btn ghost" onClick={() => { setAuthMode('register'); setStatus(null) }}>
+                  Create account
+                </button>
+                <button className="btn ghost" onClick={() => { setAuthMode('forgot'); setStatus(null) }}>
+                  Forgot password?
+                </button>
+              </div>
+            </div>
           )}
-        </div>
+
+          {authMode === 'register' && (
+            <div className="card">
+              <h3>Create account</h3>
+              <label className="field">
+                Email
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </label>
+              <label className="field">
+                Password
+                <input
+                  type="password"
+                  placeholder="Minimum 8 characters"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </label>
+              <label className="field">
+                Confirm password
+                <input
+                  type="password"
+                  placeholder="Confirm your password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, handleRegister)}
+                />
+              </label>
+              <button
+                className="btn primary"
+                onClick={handleRegister}
+                disabled={!email.trim() || password.length < 8 || password !== confirmPassword}
+              >
+                Create account
+              </button>
+              <button className="btn ghost" onClick={() => { setAuthMode('login'); setStatus(null) }} style={{ marginTop: '8px' }}>
+                Already have an account? Sign in
+              </button>
+            </div>
+          )}
+
+          {authMode === 'forgot' && (
+            <div className="card">
+              <h3>Reset password</h3>
+              <p className="muted">Enter your email and we'll send a reset link.</p>
+              <label className="field">
+                Email
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, handleForgotPassword)}
+                />
+              </label>
+              <button className="btn primary" onClick={handleForgotPassword} disabled={!email.trim()}>
+                Send reset link
+              </button>
+              <button className="btn ghost" onClick={() => { setAuthMode('login'); setStatus(null) }} style={{ marginTop: '8px' }}>
+                Back to sign in
+              </button>
+            </div>
+          )}
+
+          {authMode === 'reset' && (
+            <div className="card">
+              <h3>Set new password</h3>
+              <label className="field">
+                New password
+                <input
+                  type="password"
+                  placeholder="Minimum 8 characters"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </label>
+              <label className="field">
+                Confirm password
+                <input
+                  type="password"
+                  placeholder="Confirm your password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  onKeyDown={(e) => handleKeyDown(e, handleResetPassword)}
+                />
+              </label>
+              <button
+                className="btn primary"
+                onClick={handleResetPassword}
+                disabled={password.length < 8 || password !== confirmPassword}
+              >
+                Reset password
+              </button>
+            </div>
+          )}
+        </>
       ) : (
         <>
           <div className="card">
             <h3>Profile</h3>
+            <div className="profile-avatar-section">
+              <div
+                className={`avatar-upload ${avatarDragOver ? 'active' : ''}`}
+                onClick={() => avatarInputRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); setAvatarDragOver(true) }}
+                onDragLeave={() => setAvatarDragOver(false)}
+                onDrop={onAvatarDrop}
+              >
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="Avatar" />
+                ) : (
+                  <span className="avatar-upload-placeholder">
+                    {(user.username || user.email || '?').slice(0, 1).toUpperCase()}
+                  </span>
+                )}
+                <div className="avatar-upload-overlay">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                    <path d="M9 3l-1.8 2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2.2L15 3H9zm3 16a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-2.2a2.8 2.8 0 1 0 0-5.6 2.8 2.8 0 0 0 0 5.6z" />
+                  </svg>
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  ref={avatarInputRef}
+                  style={{ display: 'none' }}
+                  onClick={() => { if (avatarInputRef.current) avatarInputRef.current.value = '' }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) readAvatarFile(file)
+                    if (avatarInputRef.current) avatarInputRef.current.value = ''
+                  }}
+                />
+              </div>
+              <div className="avatar-upload-info">
+                <span className="muted" style={{ fontSize: '0.85rem' }}>Click or drag to upload</span>
+                {avatarUrl && (
+                  <button className="btn ghost" onClick={() => setAvatarUrl('')} style={{ padding: '4px 12px', fontSize: '0.8rem' }}>
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+
             <label className="field">
               Username
               <input value={username} onChange={(e) => setUsername(e.target.value)} />
             </label>
             <label className="field">
               Email
-              <input value={user.email} disabled style={{opacity: 0.6, cursor: 'not-allowed'}} />
+              <input value={user.email} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
             </label>
-            <div className="field">
-              <label style={{marginBottom: '8px'}}>Profile picture</label>
-              <div style={{display: 'flex', gap: '16px', alignItems: 'flex-start'}}>
-                {avatarUrl && (
-                  <div style={{flexShrink: 0}}>
-                    <img
-                      src={avatarUrl}
-                      alt="Avatar"
-                      style={{
-                        width: '80px',
-                        height: '80px',
-                        borderRadius: '50%',
-                        objectFit: 'cover',
-                        border: '2px solid var(--border)'
-                      }}
-                    />
-                  </div>
-                )}
-                <div style={{flex: 1}}>
-                  <div
-                    className={`upload-drop ${avatarDragOver ? 'active' : ''}`}
-                    style={{minHeight: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}
-                    onDragOver={(event) => {
-                      event.preventDefault()
-                      setAvatarDragOver(true)
-                    }}
-                    onDragLeave={() => setAvatarDragOver(false)}
-                    onDrop={onAvatarDrop}
-                  >
-                    <input
-                      type="file"
-                      accept="image/*"
-                      ref={avatarInputRef}
-                      onClick={() => {
-                        if (avatarInputRef.current) {
-                          avatarInputRef.current.value = ''
-                        }
-                      }}
-                      onChange={(event) => {
-                        const file = event.target.files?.[0]
-                        if (file) readAvatarFile(file)
-                        if (avatarInputRef.current) {
-                          avatarInputRef.current.value = ''
-                        }
-                      }}
-                    />
-                    <p className="muted" style={{margin: 0}}>
-                      {avatarUrl ? 'Click to change' : 'Click or drag image here'}
-                    </p>
-                  </div>
-                  {avatarUrl && (
-                    <button
-                      className="btn ghost"
-                      onClick={() => setAvatarUrl('')}
-                      style={{marginTop: '8px', width: '100%'}}
-                    >
-                      Remove avatar
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-            <div style={{display: 'flex', gap: '12px', marginTop: '16px'}}>
-              <button className="btn primary" onClick={saveProfile} style={{flex: 1}}>
+
+            <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+              <button className="btn primary" onClick={saveProfile} style={{ flex: 1 }}>
                 Save changes
               </button>
               <button className="btn outline" onClick={doLogout}>
@@ -303,6 +421,7 @@ export default function Account() {
               </button>
             </div>
           </div>
+
           <div className="card">
             <h3>Audience Mode</h3>
             <p className="muted">Unlock spectator features for all your rooms.</p>
