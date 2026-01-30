@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Link, Route, Routes } from 'react-router-dom'
+import { Link, Route, Routes, useLocation } from 'react-router-dom'
 import Home from './features/home/Home'
 import About from './features/about/About'
 import Room from './features/room/Room'
@@ -11,8 +11,9 @@ import Settings from './features/settings/Settings'
 import Owner from './features/owner/Owner'
 import { getMe, User } from './utils/auth'
 
-function Header() {
+function SiteNav() {
   const [user, setUser] = useState<User | null>(null)
+  const location = useLocation()
 
   useEffect(() => {
     getMe().then((data) => {
@@ -23,51 +24,67 @@ function Header() {
   }, [])
 
   const isOwner = user && user.is_owner === 1
+  const isRoom = location.pathname.startsWith('/room/')
+
+  // Hide the full nav in room view to keep it distraction-free
+  if (isRoom) return null
+
   return (
-    <header className="board-header">
-      <div className="board-header-left">
-        <Link className="board-back" to="/">
-          Home
+    <nav className="site-nav">
+      <div className="site-nav-left">
+        <Link className="site-nav-logo" to="/">
+          ClipClash
         </Link>
       </div>
-      <div className="board-header-center">
-        <h1>ClipClash</h1>
+      <div className="site-nav-center">
+        <Link className="nav-link" to="/">Home</Link>
+        <Link className="nav-link" to="/leaderboard">Leaderboard</Link>
+        <Link className="nav-link" to="/donate">Donate</Link>
+        <Link className="nav-link" to="/settings">Settings</Link>
+        {isOwner && <Link className="nav-link" to="/owner">Owner</Link>}
       </div>
-      <div className="board-header-right">
-        <Link className="icon-btn" to="/donate">
-          Donate
-        </Link>
-        <Link className="icon-btn" to="/sponsor">
-          Sponsor
-        </Link>
-        <Link className="icon-btn" to="/leaderboard">
-          Rank
-        </Link>
-        <Link className="icon-btn" to="/settings">
-          Settings
-        </Link>
-        {isOwner && (
-          <Link className="icon-btn" to="/owner">
-            Owner
-          </Link>
-        )}
-        <Link className="icon-btn" to="/account">
-          Account
-        </Link>
+      <div className="site-nav-right">
+        <Link className="nav-btn secondary" to="/sponsor">Sponsor</Link>
+        <Link className="nav-btn" to="/account">{user ? 'Account' : 'Sign In'}</Link>
       </div>
-    </header>
+    </nav>
+  )
+}
+
+function SiteFooter() {
+  const location = useLocation()
+  if (location.pathname.startsWith('/room/')) return null
+
+  return (
+    <footer className="site-footer">
+      <span>ClipClash</span>
+      <div className="site-footer-links">
+        <Link to="/about">About</Link>
+        <Link to="/sponsor">Sponsor</Link>
+        <Link to="/donate">Donate</Link>
+      </div>
+    </footer>
   )
 }
 
 export default function App() {
+  const location = useLocation()
+  const isRoom = location.pathname.startsWith('/room/')
+
   return (
     <div className="scene">
       <div className="scene__bg" aria-hidden="true" />
       <div className="scene__content">
         <div className="app">
-          <div className="board">
-            <Header />
-            <main className="board-body">
+          <SiteNav />
+          {isRoom ? (
+            <main className="site-main" style={{ maxWidth: 'none', padding: '0' }}>
+              <Routes>
+                <Route path="/room/:roomId" element={<Room />} />
+              </Routes>
+            </main>
+          ) : (
+            <main className="site-main">
               <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/room/:roomId" element={<Room />} />
@@ -80,7 +97,8 @@ export default function App() {
                 <Route path="/sponsor" element={<Sponsor />} />
               </Routes>
             </main>
-          </div>
+          )}
+          <SiteFooter />
         </div>
       </div>
     </div>

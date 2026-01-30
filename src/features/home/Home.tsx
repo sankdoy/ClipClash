@@ -71,7 +71,7 @@ export default function Home() {
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('/room/')) {
       const next = toRoomPath(trimmed)
       if (!next) {
-        setJoinError('Paste a full invite link, or a room code like “room-abc123”.')
+        setJoinError('Paste a full invite link, or a room code like "room-abc123".')
         return
       }
       navigate(next)
@@ -80,11 +80,11 @@ export default function Home() {
 
     // IMPORTANT:
     // The backend will happily create a new room for *any* string.
-    // If we allow arbitrary input here, users will accidentally create “random rooms”.
+    // If we allow arbitrary input here, users will accidentally create "random rooms".
     // So we only accept known room id format.
     const isRoomId = /^room-[a-z0-9]{6}$/i.test(trimmed)
     if (!isRoomId) {
-      setJoinError('Paste a full invite link, or a room code like “room-abc123”.')
+      setJoinError('Paste a full invite link, or a room code like "room-abc123".')
       return
     }
 
@@ -118,127 +118,114 @@ export default function Home() {
 
   return (
     <div className="page home">
-      <section className="home-grid">
-        <div className="home-main">
-          <div className="mode-card">
-            <p className="eyebrow">Play</p>
-            <h2>Start a room.</h2>
-            <p className="muted">3–10 players. One shared timer. Invite friends with the code in the room.</p>
-            <div className="mode-actions">
-              <button className="btn primary" onClick={startRoom}>
-                Start a room
-              </button>
-            </div>
+      {/* Top row: Start + Join side by side */}
+      <div className="home-top">
+        <div className="mode-card" style={{ flex: 1 }}>
+          <h2>Start a Room</h2>
+          <div className="mode-actions">
+            <button className="btn primary" onClick={startRoom}>
+              Start a room
+            </button>
             <div className="segment-tabs">
               <button
                 className={`segment ${roomVisibility === 'public' ? 'active' : ''}`}
                 onClick={() => setRoomVisibility('public')}
               >
-                Public room
+                Public
               </button>
               <button
                 className={`segment ${roomVisibility === 'private' ? 'active' : ''}`}
                 onClick={() => setRoomVisibility('private')}
               >
-                Private room
+                Private
               </button>
             </div>
-            <p className="muted">
-              {roomVisibility === 'public'
-                ? 'Public rooms appear in the lobby list on this device.'
-                : 'Private rooms are joinable only with a code.'}
-            </p>
           </div>
-
-          <div className="mode-card">
-            <p className="eyebrow">Join</p>
-            <h2>Join with a code.</h2>
-            <p className="muted">Use the room code your host shared.</p>
-            <div className="mode-actions">
-              <button
-                className="btn ghost"
-                onClick={joinRoom}
-                disabled={!roomCode.trim()}
-              >
-                Join with code
-              </button>
-            </div>
-            <label className="field">
-              Room code
-              <input
-                type="text"
-                placeholder="e.g. room-abc123 (or paste invite link)"
-                value={roomCode}
-                onChange={(e) => {
-                  setRoomCode(e.target.value)
-                  if (joinError) setJoinError(null)
-                }}
-              />
-            </label>
-            {joinError && <p className="muted">{joinError}</p>}
-          </div>
-
-          <div className="mode-card">
-            <p className="eyebrow">Login</p>
-            <h2>Save your profile and unlock premium features.</h2>
-            <p className="muted">Audience Mode purchases live on your account.</p>
-            <button className="btn outline" onClick={() => navigate('/account')}>
-              Go to account
-            </button>
-          </div>
+          <p className="muted" style={{ fontSize: '0.85rem' }}>
+            {roomVisibility === 'public'
+              ? 'Public rooms appear in the lobby list below.'
+              : 'Private rooms are joinable only with a code.'}
+          </p>
         </div>
 
-        <aside className="home-side">
-          <div className="panel-card">
-            <h3>How to play</h3>
-            <div className="help-graphic">
-              <span>{helpSlides[helpIndex].title}</span>
-            </div>
-            <p className="muted">{helpSlides[helpIndex].copy}</p>
-            <div className="help-nav">
-              <button
-                className="btn ghost"
-                type="button"
-                onClick={() => setHelpIndex((prev) => (prev - 1 + helpSlides.length) % helpSlides.length)}
-              >
-                ←
-              </button>
-              <button
-                className="btn ghost"
-                type="button"
-                onClick={() => setHelpIndex((prev) => (prev + 1) % helpSlides.length)}
-              >
-                →
-              </button>
-            </div>
-            <div className="help-dots">
-              {helpSlides.map((_, index) => (
-                <span key={`help-dot-${index}`} className={`dot ${index === helpIndex ? 'active' : ''}`} />
-              ))}
-            </div>
+        <div className="mode-card" style={{ flex: 1 }}>
+          <h2>Join by Code</h2>
+          <label className="field">
+            Room code
+            <input
+              type="text"
+              placeholder="e.g. room-abc123"
+              value={roomCode}
+              onChange={(e) => {
+                setRoomCode(e.target.value)
+                if (joinError) setJoinError(null)
+              }}
+            />
+          </label>
+          <div className="mode-actions">
+            <button
+              className="btn ghost"
+              onClick={joinRoom}
+              disabled={!roomCode.trim()}
+            >
+              Join with code
+            </button>
           </div>
-          {(roomsStatus !== 'ok' || publicRooms.length > 0) && (
-            <div className="panel-card">
-              <h3>Public rooms</h3>
-              <div className="room-list">
-                {roomsStatus === 'loading' && <p className="muted">Loading rooms...</p>}
-                {roomsStatus === 'error' && <p className="muted">Rooms unavailable.</p>}
-                {roomsStatus === 'ok' && publicRooms.map((room) => (
-                  <button
-                    key={room.id}
-                    className="room-chip"
-                    onClick={() => navigate(`/room/${room.id}`)}
-                  >
-                    <span>{room.name}</span>
-                    <span>{room.players}/{room.capacity}</span>
-                  </button>
-                ))}
-              </div>
-              <p className="muted">Status: {status}</p>
-            </div>
-          )}
-        </aside>
-      </section>
+          {joinError && <p className="muted">{joinError}</p>}
+        </div>
+      </div>
+
+      {/* Public Rooms */}
+      <div className="card">
+        <h3>Public Rooms</h3>
+        <div className="room-list" style={{ marginTop: '12px' }}>
+          {roomsStatus === 'loading' && <p className="muted">Loading rooms...</p>}
+          {roomsStatus === 'error' && <p className="muted">Rooms unavailable.</p>}
+          {roomsStatus === 'ok' && publicRooms.length === 0 && <p className="muted">No public rooms right now. Start one!</p>}
+          {roomsStatus === 'ok' && publicRooms.map((room) => (
+            <button
+              key={room.id}
+              className="room-chip"
+              onClick={() => navigate(`/room/${room.id}`)}
+            >
+              <span>{room.name}</span>
+              <span>{room.players}/{room.capacity}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* How it works */}
+      <div className="card" style={{ background: 'var(--card-2)' }}>
+        <h3>How it works</h3>
+        <div className="help-graphic">
+          <span>{helpSlides[helpIndex].title}</span>
+        </div>
+        <p className="muted">{helpSlides[helpIndex].copy}</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
+          <button
+            className="btn ghost"
+            type="button"
+            onClick={() => setHelpIndex((prev) => (prev - 1 + helpSlides.length) % helpSlides.length)}
+            style={{ padding: '6px 12px' }}
+          >
+            ←
+          </button>
+          <div className="help-dots">
+            {helpSlides.map((_, index) => (
+              <span key={`help-dot-${index}`} className={`dot ${index === helpIndex ? 'active' : ''}`} />
+            ))}
+          </div>
+          <button
+            className="btn ghost"
+            type="button"
+            onClick={() => setHelpIndex((prev) => (prev + 1) % helpSlides.length)}
+            style={{ padding: '6px 12px' }}
+          >
+            →
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
