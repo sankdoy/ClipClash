@@ -10,12 +10,26 @@ type ThemeColors = {
   textMuted: string
   accent: string
   accentHover: string
+  fontBody: string
+  fontHeading: string
 }
 
 type ThemeBuilderProps = {
   onApply: (css: string) => void
   onCancel: () => void
 }
+
+const fontOptions = [
+  { label: 'Manrope (Default)', value: "'Manrope',ui-sans-serif,system-ui,Helvetica,Arial" },
+  { label: 'Space Grotesk', value: "'Space Grotesk',ui-sans-serif,system-ui" },
+  { label: 'Inter', value: "'Inter',ui-sans-serif,system-ui" },
+  { label: 'Barlow', value: "'Barlow',ui-sans-serif,system-ui" },
+  { label: 'DM Sans', value: "'DM Sans',ui-sans-serif,system-ui" },
+  { label: 'IBM Plex Sans', value: "'IBM Plex Sans',ui-sans-serif,system-ui" },
+  { label: 'JetBrains Mono', value: "'JetBrains Mono','Fira Code',ui-monospace,monospace" },
+  { label: 'Fira Code', value: "'Fira Code','Source Code Pro',ui-monospace,monospace" },
+  { label: 'Source Code Pro', value: "'Source Code Pro',ui-monospace,monospace" }
+]
 
 const defaultColors: ThemeColors = {
   bg: '#0f1116',
@@ -26,7 +40,9 @@ const defaultColors: ThemeColors = {
   text: '#f4f6fb',
   textMuted: '#c5ccda',
   accent: '#ff7a1a',
-  accentHover: '#ff9a43'
+  accentHover: '#ff9a43',
+  fontBody: fontOptions[0].value,
+  fontHeading: fontOptions[1].value
 }
 
 export default function ThemeBuilder({ onApply, onCancel }: ThemeBuilderProps) {
@@ -51,6 +67,8 @@ export default function ThemeBuilder({ onApply, onCancel }: ThemeBuilderProps) {
   --accent-hover: ${colors.accentHover};
   --accent-contrast: ${adjustBrightness(colors.accent, 0.15)};
   --focus-ring: ${hexToRgba(colors.accentHover, 0.45)};
+  --font-body: ${colors.fontBody};
+  --font-heading: ${colors.fontHeading};
 }`
   }
 
@@ -82,6 +100,18 @@ export default function ThemeBuilder({ onApply, onCancel }: ThemeBuilderProps) {
           <h4>Accent</h4>
           <ColorInput label="Accent Color" value={colors.accent} onChange={(v) => updateColor('accent', v)} />
           <ColorInput label="Accent Hover" value={colors.accentHover} onChange={(v) => updateColor('accentHover', v)} />
+
+          <h4>Fonts</h4>
+          <FontSelect
+            label="Body Font"
+            value={colors.fontBody}
+            onChange={(v) => updateColor('fontBody', v)}
+          />
+          <FontSelect
+            label="Heading Font"
+            value={colors.fontHeading}
+            onChange={(v) => updateColor('fontHeading', v)}
+          />
         </div>
       </div>
 
@@ -99,10 +129,10 @@ export default function ThemeBuilder({ onApply, onCancel }: ThemeBuilderProps) {
             borderRadius: '6px',
             marginBottom: '12px'
           }}>
-            <p style={{ color: colors.text, margin: '0 0 8px 0', fontWeight: 600 }}>
+            <p style={{ color: colors.text, margin: '0 0 8px 0', fontWeight: 600, fontFamily: colors.fontHeading }}>
               Preview Card
             </p>
-            <p style={{ color: colors.textMuted, margin: 0, fontSize: '14px' }}>
+            <p style={{ color: colors.textMuted, margin: 0, fontSize: '14px', fontFamily: colors.fontBody }}>
               Secondary text looks like this
             </p>
           </div>
@@ -154,6 +184,27 @@ function ColorInput({ label, value, onChange }: { label: string; value: string; 
             placeholder="#000000"
           />
         </div>
+      </label>
+    </div>
+  )
+}
+
+function FontSelect({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <div className="color-input">
+      <label>
+        <span>{label}</span>
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          style={{ width: '100%', marginTop: '4px' }}
+        >
+          {fontOptions.map((opt) => (
+            <option key={opt.label} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
       </label>
     </div>
   )

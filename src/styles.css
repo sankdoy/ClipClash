@@ -779,7 +779,7 @@
 		display:flex;
 		flex-direction:column;
 	}
-	h1,h2,h3,h4{font-family:'Space Grotesk',ui-sans-serif,system-ui;font-weight:600;letter-spacing:-0.02em}
+	h1,h2,h3,h4{font-family:var(--font-heading);font-weight:600;letter-spacing:-0.02em}
 	*{box-sizing:border-box}
 	a{color:var(--accent)}
 }

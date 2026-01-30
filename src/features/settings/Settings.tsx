@@ -51,6 +51,8 @@ export default function Settings() {
   --disabled-bg: #232a38;
   --disabled-text: #7f8a99;
   --disabled-border: #2f3a4f;
+  --font-body: 'Manrope',ui-sans-serif,system-ui,Helvetica,Arial;
+  --font-heading: 'Space Grotesk',ui-sans-serif,system-ui;
 }
 
 /* Tips:
@@ -58,6 +60,9 @@ export default function Settings() {
 - --panel / --card / --card-2: Surface colors
 - --text / --text-muted / --text-dim: Text hierarchy
 - --accent / --accent-hover: Interactive elements
+- --font-body / --font-heading: Body and heading fonts
+  Available: Manrope, Space Grotesk, Inter, Barlow, DM Sans,
+  IBM Plex Sans, JetBrains Mono, Fira Code, Source Code Pro
 */`
 
   useEffect(() => {
