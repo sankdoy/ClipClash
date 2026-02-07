@@ -10,6 +10,24 @@ type User = {
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'reset'
 
+type Stats = {
+  games_played: number
+  wins: number
+  category_wins: number
+  updated_at: string | null
+}
+
+const BLOCKED_KEY = 'cd:blocked_players'
+const FAVOURITES_KEY = 'cd:favourite_players'
+
+function getStoredList(key: string): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(key) ?? '{}')
+  } catch {
+    return {}
+  }
+}
+
 export default function Account() {
   const [authMode, setAuthMode] = useState<AuthMode>('login')
   const [email, setEmail] = useState('')
@@ -25,6 +43,9 @@ export default function Account() {
   const [hasAudienceMode, setHasAudienceMode] = useState(false)
   const [audienceLoading, setAudienceLoading] = useState(false)
   const [audienceStatus, setAudienceStatus] = useState<string | null>(null)
+  const [stats, setStats] = useState<Stats | null>(null)
+  const [blockedPlayers, setBlockedPlayers] = useState<Record<string, string>>(getStoredList(BLOCKED_KEY))
+  const [favouritePlayers, setFavouritePlayers] = useState<Record<string, string>>(getStoredList(FAVOURITES_KEY))
 
   useEffect(() => {
     getMe().then((data) => {
@@ -33,9 +54,37 @@ export default function Account() {
         setUsername(data.user.username)
         setAvatarUrl(data.user.avatar_url ?? '')
         fetchEntitlements()
+        fetchStats()
       }
     })
   }, [])
+
+  const fetchStats = async () => {
+    try {
+      const res = await fetch('/api/stats', { credentials: 'include' })
+      if (!res.ok) return
+      const data = await res.json()
+      if (data?.stats) setStats(data.stats)
+    } catch { /* ignore */ }
+  }
+
+  const removeBlocked = (pid: string) => {
+    setBlockedPlayers((prev) => {
+      const next = { ...prev }
+      delete next[pid]
+      localStorage.setItem(BLOCKED_KEY, JSON.stringify(next))
+      return next
+    })
+  }
+
+  const removeFavourite = (pid: string) => {
+    setFavouritePlayers((prev) => {
+      const next = { ...prev }
+      delete next[pid]
+      localStorage.setItem(FAVOURITES_KEY, JSON.stringify(next))
+      return next
+    })
+  }
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -435,6 +484,68 @@ export default function Account() {
               )}
             </div>
             {audienceStatus && <p className="muted">{audienceStatus}</p>}
+          </div>
+
+          {stats && (
+            <div className="card">
+              <h3>Your stats</h3>
+              <div className="stat-grid">
+                <div className="stat-item">
+                  <span className="stat-value">{stats.games_played}</span>
+                  <span className="stat-label">Games played</span>
+                </div>
+                <div className="stat-item">
+                  <span className="stat-value">{stats.wins}</span>
+                  <span className="stat-label">Wins</span>
+                </div>
+                <div className="stat-item">
+                  <span className="stat-value">{stats.category_wins}</span>
+                  <span className="stat-label">Category wins</span>
+                </div>
+                <div className="stat-item">
+                  <span className="stat-value">
+                    {stats.games_played > 0 ? Math.round((stats.wins / stats.games_played) * 100) : 0}%
+                  </span>
+                  <span className="stat-label">Win rate</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="card">
+            <h3>Favourite players</h3>
+            {Object.keys(favouritePlayers).length === 0 ? (
+              <p className="muted">No favourite players yet. Star players in the room to add them.</p>
+            ) : (
+              <div className="people-list">
+                {Object.entries(favouritePlayers).map(([pid, name]) => (
+                  <div key={pid} className="people-row">
+                    <span>{name}</span>
+                    <button className="btn ghost" onClick={() => removeFavourite(pid)} style={{ padding: '4px 10px', fontSize: '0.75rem' }}>
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="card">
+            <h3>Blocked players</h3>
+            {Object.keys(blockedPlayers).length === 0 ? (
+              <p className="muted">No blocked players. Block players in the room to add them here.</p>
+            ) : (
+              <div className="people-list">
+                {Object.entries(blockedPlayers).map(([pid, name]) => (
+                  <div key={pid} className="people-row">
+                    <span>{name}</span>
+                    <button className="btn ghost" onClick={() => removeBlocked(pid)} style={{ padding: '4px 10px', fontSize: '0.75rem' }}>
+                      Unblock
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </>
       )}

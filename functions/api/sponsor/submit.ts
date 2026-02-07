@@ -1,7 +1,8 @@
-import type { Env } from '../_helpers'
+import { getSessionUser, type Env } from '../_helpers'
 import { getDB, logEvent } from '../../_lib/db'
 import { badRequest, jsonOk } from '../../_lib/responses'
 import { validateBrandName, validateEmail, validateHttpsUrl, validateTagline } from '../../_lib/validate'
+import { isBlocked } from '../../../shared/moderation'
 
 export async function onRequest({ env, request }: { env: Env; request: Request }) {
   if (request.method !== 'POST') {
@@ -39,8 +40,14 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
   if (!validateBrandName(brandName)) {
     return badRequest('Invalid brand name')
   }
+  if (isBlocked(brandName)) {
+    return badRequest('Brand name contains inappropriate content.')
+  }
   if (!validateTagline(tagline)) {
     return badRequest('Invalid tagline')
+  }
+  if (isBlocked(tagline)) {
+    return badRequest('Tagline contains inappropriate content.')
   }
   if (!imageUrl) {
     return badRequest('Image URL required')
@@ -52,17 +59,18 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
     return badRequest('Invalid credit count')
   }
 
+  const user = await getSessionUser(env, request).catch(() => null)
   const sponsorId = crypto.randomUUID()
   const campaignId = crypto.randomUUID()
   const createdAt = Date.now()
   const db = getDB(env)
   await db.prepare(
     `
-    INSERT INTO sponsors (id, name, status, created_at)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO sponsors (id, name, status, created_at, account_id, contact_email)
+    VALUES (?, ?, ?, ?, ?, ?)
     `
   )
-    .bind(sponsorId, brandName, 'active', createdAt)
+    .bind(sponsorId, brandName, 'active', createdAt, user?.id ?? null, contactEmail)
     .run()
 
   await db.prepare(

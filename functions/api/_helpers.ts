@@ -9,13 +9,11 @@ export type Env = {
 }
 
 export function json(data: unknown, init: ResponseInit = {}) {
-  return new Response(JSON.stringify(data), {
-    ...init,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      ...(init.headers ?? {})
-    }
-  })
+  const h = new Headers(init.headers as HeadersInit | undefined)
+  if (!h.has('content-type')) {
+    h.set('content-type', 'application/json; charset=utf-8')
+  }
+  return new Response(JSON.stringify(data), { ...init, headers: h })
 }
 
 export function getCookie(headers: Headers, name: string) {
@@ -30,10 +28,13 @@ export function getCookie(headers: Headers, name: string) {
   return null
 }
 
-export function setCookie(name: string, value: string, options: { maxAge?: number } = {}) {
+export function setCookie(name: string, value: string, options: { maxAge?: number; secure?: boolean } = {}) {
   const attrs = [`${name}=${encodeURIComponent(value)}`, 'Path=/', 'HttpOnly', 'SameSite=Lax']
   if (options.maxAge) {
     attrs.push(`Max-Age=${options.maxAge}`)
+  }
+  if (options.secure) {
+    attrs.push('Secure')
   }
   return attrs.join('; ')
 }

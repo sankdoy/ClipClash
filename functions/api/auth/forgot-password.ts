@@ -41,8 +41,8 @@ export async function onRequestPost({ request, env }: { request: Request; env: E
     await sendEmailViaMailchannels({
       to: email,
       fromEmail: env.MAIL_FROM_EMAIL!,
-      fromName: env.MAIL_FROM_NAME || 'ClipClash',
-      subject: 'Reset your ClipClash password',
+      fromName: env.MAIL_FROM_NAME || 'ClipDuel',
+      subject: 'Reset your ClipDuel password',
       text: `Click this link to reset your password:\n\n${siteUrl}/account?reset=${token}\n\nThis link expires in 1 hour.\n\nIf you didn't request this, you can safely ignore this email.`
     })
   }

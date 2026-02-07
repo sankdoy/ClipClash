@@ -67,7 +67,7 @@ export default function Donations() {
       <header className="page-header">
         <div>
           <p className="eyebrow">Donations</p>
-          <h2>Support ClipClash</h2>
+          <h2>Support ClipDuel</h2>
           <p className="muted">Donations keep the servers running. Thank you.</p>
         </div>
       </header>

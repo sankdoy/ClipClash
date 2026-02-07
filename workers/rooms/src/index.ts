@@ -21,7 +21,7 @@ import type {
 } from '../../../src/types'
 import { z } from 'zod'
 import { isBlocked } from '../../../shared/moderation'
-import { isTikTokUrl } from '../../../shared/tiktok'
+import { isTikTokUrl, detectPlatform } from '../../../shared/tiktok'
 
 export interface Env {
   ROOMS_DO: DurableObjectNamespace
@@ -1177,14 +1177,46 @@ export class RoomsDOv2 implements DurableObject {
     if (parsed.type === 'report') {
       if (session.role !== 'player') return
       if (Date.now() - session.lastReportAt < reportCooldownMs) return
+      const reportId = crypto.randomUUID()
+      const reportedAt = Date.now()
       this.reports.push({
-        id: crypto.randomUUID(),
+        id: reportId,
         messageId: parsed.messageId,
         reporterId: session.playerId!,
-        reportedAt: Date.now()
+        reportedAt
       })
-      session.lastReportAt = Date.now()
+      session.lastReportAt = reportedAt
       ws.send(toServerMessage({ type: 'report_received', messageId: parsed.messageId }))
+
+      // Persist report with chat context to database for moderator review
+      if (this.env.DB) {
+        const reportedMsg = this.chat.find((m) => m.id === parsed.messageId)
+        const recentChat = this.chat.slice(-50).map((m) => ({
+          id: m.id,
+          name: m.name,
+          playerId: m.playerId,
+          message: m.message,
+          sentAt: m.sentAt
+        }))
+        const roomId = this.inviteCode ?? this.state.id.toString()
+        void this.env.DB.prepare(
+          `INSERT INTO reports (id, room_id, message_id, reporter_id, reported_at, chat_log, reported_player_id, reported_player_name, message_text)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+          .bind(
+            reportId,
+            roomId,
+            parsed.messageId,
+            session.playerId!,
+            new Date(reportedAt).toISOString(),
+            JSON.stringify(recentChat),
+            reportedMsg?.playerId ?? null,
+            reportedMsg?.name ?? null,
+            reportedMsg?.message ?? null
+          )
+          .run()
+          .catch(() => {})
+      }
     }
 
     if (parsed.type === 'save_draft') {
@@ -1805,7 +1837,7 @@ export class RoomsDOv2 implements DurableObject {
     }
     return this.shuffle(entries).map((entry, index) => ({
       ...entry,
-      label: `TikTok ${index + 1}`
+      label: `${detectPlatform(entry.url) ?? 'Clip'} ${index + 1}`
     }))
   }
 

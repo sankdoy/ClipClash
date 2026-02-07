@@ -33,7 +33,7 @@ function SiteNav() {
     <nav className="site-nav">
       <div className="site-nav-left">
         <Link className="site-nav-logo" to="/">
-          ClipClash
+          ClipDuel
         </Link>
       </div>
       <div className="site-nav-center">
@@ -57,7 +57,7 @@ function SiteFooter() {
 
   return (
     <footer className="site-footer">
-      <span>ClipClash</span>
+      <span>ClipDuel</span>
       <div className="site-footer-links">
         <Link to="/about">About</Link>
         <Link to="/sponsor">Sponsor</Link>

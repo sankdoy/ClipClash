@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getHealth, getRooms } from '../../utils/api'
 
@@ -21,22 +21,7 @@ export default function Home() {
   const [publicRooms, setPublicRooms] = useState<Array<{ id: string; name: string; players: number; capacity: number }>>([])
   const [roomsStatus, setRoomsStatus] = useState<'loading' | 'ok' | 'error'>('loading')
   const [roomVisibility, setRoomVisibility] = useState<'public' | 'private'>('public')
-  const [helpIndex, setHelpIndex] = useState(0)
   const navigate = useNavigate()
-  const helpSlides = useMemo(() => ([
-    {
-      title: 'Get the prompts',
-      copy: 'When the game starts, you get categories and a timer.'
-    },
-    {
-      title: 'Hunt the clip',
-      copy: 'During the timer, find TikToks that best fit each category and submit them.'
-    },
-    {
-      title: 'Vote + crown',
-      copy: 'When time ends, everyone votes on the best fitting TikTok.'
-    }
-  ]), [])
 
   const startRoom = () => {
     const newRoomId = makeRoomId()
@@ -198,32 +183,45 @@ export default function Home() {
       {/* How it works */}
       <div className="card" style={{ background: 'var(--card-2)' }}>
         <h3>How it works</h3>
-        <div className="help-graphic">
-          <span>{helpSlides[helpIndex].title}</span>
-        </div>
-        <p className="muted">{helpSlides[helpIndex].copy}</p>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
-          <button
-            className="btn ghost"
-            type="button"
-            onClick={() => setHelpIndex((prev) => (prev - 1 + helpSlides.length) % helpSlides.length)}
-            style={{ padding: '6px 12px' }}
-          >
-            ←
-          </button>
-          <div className="help-dots">
-            {helpSlides.map((_, index) => (
-              <span key={`help-dot-${index}`} className={`dot ${index === helpIndex ? 'active' : ''}`} />
-            ))}
+        <div className="how-to-steps">
+          <div className="how-step">
+            <div className="how-step-icon">
+              <svg viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="6" y="4" width="20" height="24" rx="3" />
+                <line x1="10" y1="10" x2="22" y2="10" />
+                <line x1="10" y1="15" x2="22" y2="15" />
+                <line x1="10" y1="20" x2="17" y2="20" />
+              </svg>
+            </div>
+            <div>
+              <strong>Get categories</strong>
+              <p className="muted">The host picks categories and sets a timer.</p>
+            </div>
           </div>
-          <button
-            className="btn ghost"
-            type="button"
-            onClick={() => setHelpIndex((prev) => (prev + 1) % helpSlides.length)}
-            style={{ padding: '6px 12px' }}
-          >
-            →
-          </button>
+          <div className="how-step">
+            <div className="how-step-icon">
+              <svg viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="14" cy="14" r="8" />
+                <line x1="20" y1="20" x2="28" y2="28" />
+                <path d="M11 12l4 4-4 4" strokeWidth="2" />
+              </svg>
+            </div>
+            <div>
+              <strong>Hunt clips</strong>
+              <p className="muted">Find the best short clips from any platform and submit them.</p>
+            </div>
+          </div>
+          <div className="how-step">
+            <div className="how-step-icon">
+              <svg viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M16 4l3.5 7 7.5 1-5.5 5.2 1.3 7.8L16 21.5 9.2 25l1.3-7.8L5 12l7.5-1z" />
+              </svg>
+            </div>
+            <div>
+              <strong>Vote + crown</strong>
+              <p className="muted">Everyone votes on the best clip. Most wins takes the crown.</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

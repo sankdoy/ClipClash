@@ -19,7 +19,7 @@ import type {
   TieBreakState,
   TimerState
 } from '../../types'
-import { isTikTokUrl } from '../../../shared/tiktok'
+import { isClipUrl, detectPlatform, PLATFORM_NAMES } from '../../../shared/tiktok'
 
 const fallbackCategories: Category[] = [
   { id: 'cutest', name: 'Cutest' },
@@ -77,6 +77,24 @@ const categoryPresets = [
 ]
 
 const lastCategoriesKey = 'cc:last_categories'
+const BLOCKED_KEY = 'cd:blocked_players'
+const FAVOURITES_KEY = 'cd:favourite_players'
+
+function getBlockedPlayers(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(BLOCKED_KEY) ?? '{}')
+  } catch {
+    return {}
+  }
+}
+
+function getFavouritePlayers(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(FAVOURITES_KEY) ?? '{}')
+  } catch {
+    return {}
+  }
+}
 
 function getWsBase() {
   const override = import.meta.env.VITE_ROOMS_WS_URL as string | undefined
@@ -98,6 +116,13 @@ function formatSeconds(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = Math.max(0, totalSeconds % 60)
   return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+function formatChatTime(timestamp: number) {
+  const d = new Date(timestamp)
+  const h = d.getHours().toString().padStart(2, '0')
+  const m = d.getMinutes().toString().padStart(2, '0')
+  return `${h}:${m}`
 }
 
 export default function Room() {
@@ -147,12 +172,49 @@ export default function Room() {
   const [audienceCode, setAudienceCode] = useState<string | null>(null)
   const [timerDraft, setTimerDraft] = useState(10)
   const [streamerModeEnabled, setStreamerModeEnabled] = useState(false)
+  const [blockedPlayers, setBlockedPlayers] = useState<Record<string, string>>(getBlockedPlayers)
+  const [favouritePlayers, setFavouritePlayers] = useState<Record<string, string>>(getFavouritePlayers)
   const socketRef = useRef<WebSocket | null>(null)
   const timerRef = useRef<TimerState | null>(null)
   const submitTimersRef = useRef<Record<string, number>>({})
+  const chatEndRef = useRef<HTMLDivElement | null>(null)
   const isTestPlayer = Boolean(new URLSearchParams(window.location.search).get('player'))
   const isAudienceView = new URLSearchParams(window.location.search).get('audience') === '1'
   const hostKeyFromUrl = new URLSearchParams(window.location.search).get('hostKey') ?? undefined
+
+  // Persist block/fav lists
+  useEffect(() => {
+    localStorage.setItem(BLOCKED_KEY, JSON.stringify(blockedPlayers))
+  }, [blockedPlayers])
+  useEffect(() => {
+    localStorage.setItem(FAVOURITES_KEY, JSON.stringify(favouritePlayers))
+  }, [favouritePlayers])
+
+  const blockPlayer = (pid: string, name: string) => {
+    setBlockedPlayers((prev) => ({ ...prev, [pid]: name }))
+    setActionNotice(`Blocked ${name}.`)
+  }
+  const unblockPlayer = (pid: string) => {
+    setBlockedPlayers((prev) => {
+      const next = { ...prev }
+      delete next[pid]
+      return next
+    })
+  }
+  const favouritePlayer = (pid: string, name: string) => {
+    setFavouritePlayers((prev) => ({ ...prev, [pid]: name }))
+    setActionNotice(`Added ${name} to favourites.`)
+  }
+  const unfavouritePlayer = (pid: string) => {
+    setFavouritePlayers((prev) => {
+      const next = { ...prev }
+      delete next[pid]
+      return next
+    })
+  }
+
+  // Check if any blocked players are in the room
+  const blockedInRoom = players.filter((p) => blockedPlayers[p.id] && p.id !== playerId)
 
   useEffect(() => {
     if (!roomId) return
@@ -180,7 +242,6 @@ export default function Room() {
         JSON.stringify({
           type: 'hello',
           sessionToken: storedToken ?? undefined,
-          // roomId is the join code; no separate inviteCode
           hostKey: hostKeyFromUrl ?? undefined,
           audienceCode: audienceFromUrl ?? undefined,
           visibility: hostKeyFromUrl ? visibility : undefined
@@ -372,7 +433,7 @@ export default function Room() {
     const updateHuntTitle = () => {
       const current = timerRef.current
       const remaining = current?.huntRemainingSeconds ?? (settings?.defaultTime ?? 10) * 60
-      document.title = `${formatSeconds(remaining)} • ClipClash`
+      document.title = `${formatSeconds(remaining)} \u2022 ClipDuel`
     }
 
     if (phase === 'hunt') {
@@ -381,13 +442,13 @@ export default function Room() {
     } else if (phase === 'intermission') {
       let flip = false
       const updateIntermissionTitle = () => {
-        document.title = flip ? '⏸ Intermission • ClipClash' : 'ClipClash'
+        document.title = flip ? '\u23f8 Intermission \u2022 ClipDuel' : 'ClipDuel'
         flip = !flip
       }
       updateIntermissionTitle()
       interval = window.setInterval(updateIntermissionTitle, 800)
     } else {
-      document.title = 'ClipClash'
+      document.title = 'ClipDuel'
     }
 
     return () => {
@@ -397,10 +458,12 @@ export default function Room() {
     }
   }, [phase, settings?.defaultTime])
 
+  // Auto-scroll chat
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chat])
+
   // Sponsor stinger overlay
-  // NOTE: This is intentionally split into two effects.
-  // If we include `sponsorOverlaySeen` in the same effect that creates the timeout,
-  // React will run cleanup on re-render and clear the timeout immediately.
   useEffect(() => {
     if (phase === 'lobby') {
       setSponsorOverlaySeen(false)
@@ -510,7 +573,7 @@ export default function Room() {
     const ws = socketRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return
     ws.send(JSON.stringify({ type: 'report', messageId }))
-    setReportNotice('Report sent.')
+    setReportNotice('Report sent. Chat log attached.')
   }
 
   const startHunt = () => {
@@ -710,13 +773,14 @@ export default function Room() {
       roomId,
       scoreboard,
       history,
+      chatLog: chat,
       generatedAt: new Date().toISOString()
     }
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `tiktok-olympics-${roomId ?? 'room'}-results.json`
+    link.download = `clipduel-${roomId ?? 'room'}-results.json`
     link.click()
     URL.revokeObjectURL(url)
   }
@@ -773,8 +837,11 @@ export default function Room() {
         })
         return
       }
-      if (!isTikTokUrl(trimmed)) {
-        setSubmissionErrors((prev) => ({ ...prev, [categoryId]: 'Invalid TikTok link.' }))
+      if (!isClipUrl(trimmed)) {
+        setSubmissionErrors((prev) => ({
+          ...prev,
+          [categoryId]: 'Unsupported platform. Use TikTok, YouTube Shorts, Instagram, Facebook, or other supported links.'
+        }))
         return
       }
       setSubmissionErrors((prev) => {
@@ -813,7 +880,7 @@ export default function Room() {
           <div>
             <p className="eyebrow">Audience</p>
             <h2>{roomCode}</h2>
-            <p className="muted">{isConnected ? 'Connected' : 'Connecting...'} • {phase}</p>
+            <p className="muted">{isConnected ? 'Connected' : 'Connecting...'} &bull; {phase}</p>
           </div>
         </div>
         <div className="panel-card">
@@ -852,7 +919,6 @@ export default function Room() {
         <div className="board-actions">
           <div className="actions-right">
             <button className="btn outline action-btn" onClick={leaveRoom}>
-              <span className="btn-icon">OUT</span>
               Leave
             </button>
           </div>
@@ -863,12 +929,19 @@ export default function Room() {
 
   return (
     <div className="page room">
+      {/* Blocked player warning banner */}
+      {blockedInRoom.length > 0 && (
+        <div className="blocked-warning">
+          Blocked player{blockedInRoom.length > 1 ? 's' : ''} in this room: {blockedInRoom.map((p) => p.displayName).join(', ')}
+        </div>
+      )}
+
       <div className="room-status-bar">
         <div>
           <p className="eyebrow">Room</p>
           <h2>{roomCode}</h2>
           <p className="muted">
-            {isConnected ? 'Connected' : 'Connecting...'} • {players.length}/10 players • Host:{' '}
+            {isConnected ? 'Connected' : 'Connecting...'} &bull; {players.length}/10 players &bull; Host:{' '}
             {players.find((player) => player.isHost)?.displayName ?? 'TBD'}
           </p>
         </div>
@@ -894,49 +967,76 @@ export default function Room() {
           className={`tab-btn ${mobilePanel === 'side' ? 'active' : ''}`}
           onClick={() => setMobilePanel('side')}
         >
-          Chat/Help
+          Chat
         </button>
       </div>
 
       <section className="board-grid" data-mobile={mobilePanel}>
+        {/* ─── PLAYERS COLUMN ─── */}
         <aside className="board-col players-col" data-panel="players">
           <div className="panel-card players-panel">
             <h3>PLAYERS {players.length}/{maxPlayers}</h3>
             <div className="player-stack">
               {playerSlots.map((player, index) =>
                 player ? (
-                  <div key={player.id} className={`player-slot ${player.isHost ? 'host' : ''}`}>
-                    <div className="player-avatar">{player.displayName.slice(0, 1).toUpperCase()}</div>
-                    <div className="player-meta">
-                      <span className="player-name">{player.displayName}</span>
-                    </div>
-                    {(phase === 'lobby' || phase === 'hunt') && (
-                      <span
-                        className={`ready-indicator ${
-                          (phase === 'hunt' ? player.isDone : player.isReady) ? 'ready' : 'not-ready'
-                        }`}
-                      >
-                        {(phase === 'hunt' ? player.isDone : player.isReady) ? '✓' : '×'}
-                      </span>
-                    )}
-                    {isHost && !player.isHost && player.isConnected && (
-                      <div className="player-actions">
-                        <button className="btn ghost" onClick={() => assignHost(player.id)}>
-                          Make host
-                        </button>
-                        <button className="btn ghost danger" onClick={() => kickPlayer(player.id)}>
-                          Kick
-                        </button>
+                  <div
+                    key={player.id}
+                    className={`player-card-v2 ${player.isHost ? 'host' : ''} ${!player.isConnected ? 'offline' : ''} ${favouritePlayers[player.id] ? 'favourite' : ''} ${blockedPlayers[player.id] ? 'blocked' : ''}`}
+                  >
+                    <div className="player-card-left">
+                      <div className="player-avatar-v2">
+                        {player.displayName.slice(0, 1).toUpperCase()}
+                        <span className={`status-dot ${player.isConnected ? 'online' : 'away'}`} />
                       </div>
-                    )}
-                    <span className={`pill ${player.isConnected ? 'online' : 'offline'}`}>
-                      {player.isConnected ? 'online' : 'offline'}
-                    </span>
+                      <div className="player-info-v2">
+                        <span className="player-name-v2">
+                          {player.displayName}
+                          {player.isHost && <span className="host-tag">HOST</span>}
+                          {favouritePlayers[player.id] && <span className="fav-tag" title="Favourite">&#9733;</span>}
+                        </span>
+                        <span className="player-status-v2">
+                          {!player.isConnected
+                            ? 'Offline'
+                            : phase === 'hunt'
+                              ? player.isDone ? 'Done' : 'Hunting'
+                              : phase === 'lobby'
+                                ? player.isReady ? 'Ready' : 'Not ready'
+                                : 'In game'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="player-card-right">
+                      {(phase === 'lobby' || phase === 'hunt') && (
+                        <span className={`ready-dot ${(phase === 'hunt' ? player.isDone : player.isReady) ? 'green' : 'red'}`} />
+                      )}
+                      {player.id !== playerId && (
+                        <div className="player-social-actions">
+                          {!favouritePlayers[player.id] ? (
+                            <button className="btn-micro" title="Favourite" onClick={() => favouritePlayer(player.id, player.displayName)}>&#9734;</button>
+                          ) : (
+                            <button className="btn-micro fav" title="Unfavourite" onClick={() => unfavouritePlayer(player.id)}>&#9733;</button>
+                          )}
+                          {!blockedPlayers[player.id] ? (
+                            <button className="btn-micro" title="Block" onClick={() => blockPlayer(player.id, player.displayName)}>&#8856;</button>
+                          ) : (
+                            <button className="btn-micro blocked" title="Unblock" onClick={() => unblockPlayer(player.id)}>&#8856;</button>
+                          )}
+                        </div>
+                      )}
+                      {isHost && !player.isHost && player.isConnected && (
+                        <div className="player-host-actions">
+                          <button className="btn-micro" title="Make host" onClick={() => assignHost(player.id)}>&#9733;</button>
+                          <button className="btn-micro danger" title="Kick" onClick={() => kickPlayer(player.id)}>&#10005;</button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ) : (
-                  <div key={`empty-${index}`} className="player-slot placeholder">
-                    <div className="player-avatar">?</div>
-                    <span className="muted">Empty slot</span>
+                  <div key={`empty-${index}`} className="player-card-v2 empty">
+                    <div className="player-card-left">
+                      <div className="player-avatar-v2 placeholder-av">?</div>
+                      <span className="player-status-v2">Empty slot</span>
+                    </div>
                   </div>
                 )
               )}
@@ -944,6 +1044,7 @@ export default function Room() {
           </div>
         </aside>
 
+        {/* ─── CENTER COLUMN ─── */}
         <main className="board-col center-col" data-panel="main">
           {phase === 'lobby' ? (
             <div className="center-stack">
@@ -1098,7 +1199,7 @@ export default function Room() {
                               onClick={purchaseAudienceMode}
                               disabled={!canPurchaseAudience || audienceLoading}
                             >
-                              {audienceLoading ? 'Checkout...' : 'Purchase ($30)'}
+                              {audienceLoading ? 'Checkout...' : 'Purchase (\u00a330)'}
                             </button>
                           ) : (
                             <span className="muted">Owned</span>
@@ -1113,7 +1214,7 @@ export default function Room() {
                       <div className="setting-row">
                         <div className="setting-info">
                           <h4>Audience link</h4>
-                          <p className="muted">Share with viewers to vote. Audience cannot join without this.</p>
+                          <p className="muted">Share with viewers to vote.</p>
                         </div>
                         <div className="setting-control">
                           <span className="room-pill">{audienceCode}</span>
@@ -1127,7 +1228,7 @@ export default function Room() {
                       <div className="setting-row">
                         <div className="setting-info">
                           <h4>Categories</h4>
-                          <p className="muted">3–12 categories. Changes apply before hunt starts.</p>
+                          <p className="muted">3-12 categories.</p>
                         </div>
                         <div className="setting-control">
                           <button
@@ -1145,7 +1246,7 @@ export default function Room() {
                       <div className="setting-row">
                         <div className="setting-info">
                           <h4>Streamer host</h4>
-                          <p className="muted">Enable if this room is hosted by a streamer.</p>
+                          <p className="muted">Enable if hosted by a streamer.</p>
                         </div>
                         <div className="setting-control">
                           <button
@@ -1181,7 +1282,7 @@ export default function Room() {
                             </button>
                           </div>
                           <p className="muted">
-                            {validCategoryCount} ready. Need 3-12. Changes apply before hunt starts.
+                            {validCategoryCount} ready. Need 3-12.
                           </p>
                         </div>
                       )}
@@ -1209,7 +1310,14 @@ export default function Room() {
                   </div>
                 )}
                 {phase === 'hunt' && (
-                  <p className="muted">Submit one TikTok per category. You have {categories.length} categories.</p>
+                  <>
+                    <p className="muted">Submit one clip per category. You have {categories.length} categories.</p>
+                    <div className="platform-badges">
+                      {PLATFORM_NAMES.map((name) => (
+                        <span key={name} className="platform-badge">{name}</span>
+                      ))}
+                    </div>
+                  </>
                 )}
                 {phase === 'intermission' && (
                   <p className="muted">
@@ -1245,41 +1353,45 @@ export default function Room() {
                     Submitted: {submittedCount}/{categories.length}
                   </p>
                   <div className="category-grid">
-                    {categories.map((category) => (
-                      <div key={category.id} className="category-card">
-                        <div>
-                          <span>{category.name}</span>
-                          {submissionSaved[category.id] && (
-                            <p className="muted">✅ Saved</p>
-                          )}
-                          {!submissionSaved[category.id] && submissionErrors[category.id] && (
-                            <p className="error">❌ {submissionErrors[category.id]}</p>
-                          )}
-                          {!submissionSaved[category.id] && !submissionErrors[category.id] && submissionDrafts[category.id] && (
-                            <p className="muted">Draft in progress.</p>
-                          )}
-                          {!submissionDrafts[category.id] && !submissionSaved[category.id] && !submissionErrors[category.id] && (
-                            <p className="muted">No submission yet.</p>
-                          )}
+                    {categories.map((category) => {
+                      const draft = submissionDrafts[category.id] ?? ''
+                      const platform = draft ? detectPlatform(draft) : null
+                      return (
+                        <div key={category.id} className="category-card">
+                          <div>
+                            <span>{category.name}</span>
+                            {submissionSaved[category.id] && (
+                              <p className="muted saved-indicator">Saved {platform ? `(${platform})` : ''}</p>
+                            )}
+                            {!submissionSaved[category.id] && submissionErrors[category.id] && (
+                              <p className="error">{submissionErrors[category.id]}</p>
+                            )}
+                            {!submissionSaved[category.id] && !submissionErrors[category.id] && draft && (
+                              <p className="muted">Draft {platform ? `- ${platform}` : '- validating...'}</p>
+                            )}
+                            {!draft && !submissionSaved[category.id] && !submissionErrors[category.id] && (
+                              <p className="muted">No submission yet.</p>
+                            )}
+                          </div>
+                          <div className="category-actions">
+                            <input
+                              type="text"
+                              placeholder="Paste clip URL (TikTok, YouTube, Insta...)"
+                              value={draft}
+                              onChange={(e) =>
+                                setSubmissionDrafts((prev) => {
+                                  const next = { ...prev, [category.id]: e.target.value }
+                                  queueSubmission(category.id, e.target.value)
+                                  return next
+                                })
+                              }
+                              onBlur={(e) => queueSubmission(category.id, e.target.value, true)}
+                              disabled={phase !== 'hunt'}
+                            />
+                          </div>
                         </div>
-                        <div className="category-actions">
-                          <input
-                            type="text"
-                            placeholder="Paste TikTok URL"
-                            value={submissionDrafts[category.id] ?? ''}
-                            onChange={(e) =>
-                              setSubmissionDrafts((prev) => {
-                                const next = { ...prev, [category.id]: e.target.value }
-                                queueSubmission(category.id, e.target.value)
-                                return next
-                              })
-                            }
-                            onBlur={(e) => queueSubmission(category.id, e.target.value, true)}
-                            disabled={phase !== 'hunt'}
-                          />
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -1292,17 +1404,17 @@ export default function Room() {
                   </p>
                   <div className="playback-card">
                     {!round || (round.entries ?? []).length === 0 ? (
-                      <p className="muted">No valid TikTok submissions to play.</p>
+                      <p className="muted">No valid submissions to play.</p>
                     ) : round.stage === 'playback' ? (
                       <>
                         <p className="muted">
                           Now playing:{' '}
                           <strong>
                             {round.entries[Math.min(round.playbackIndex, round.entries.length - 1)]?.label ??
-                              `TikTok ${round.playbackIndex + 1}`}
+                              `Clip ${round.playbackIndex + 1}`}
                           </strong>
                         </p>
-                        <TikTokEmbed
+                        <ClipEmbed
                           url={
                             round.entries[Math.min(round.playbackIndex, round.entries.length - 1)]?.url ?? ''
                           }
@@ -1333,7 +1445,7 @@ export default function Room() {
                   )}
                   {tiebreak && (
                     <div className="tiebreak">
-                      <p className="muted">Tie-breaker: Rock–Paper–Scissors</p>
+                      <p className="muted">Tie-breaker: Rock-Paper-Scissors</p>
                       <div className="tiebreak-grid">
                         {(['rock', 'paper', 'scissors'] as RpsChoice[]).map((choice) => (
                           <button
@@ -1444,6 +1556,7 @@ export default function Room() {
           )}
         </main>
 
+        {/* ─── SIDE COLUMN ─── */}
         <aside className="board-col side-col" data-panel="side">
           {phase === 'rounds' ? (
             <div className="panel-card">
@@ -1487,31 +1600,73 @@ export default function Room() {
           ) : (
             <div className="panel-card">
               <h3>How to play</h3>
-              <div className="help-graphic" />
-              <p className="muted">Vote the timer, hunt clips, then crown each category champion.</p>
-              <div className="help-dots">
-                <span className="dot active" />
-                <span className="dot" />
-                <span className="dot" />
+              <div className="how-to-steps">
+                <div className="how-step">
+                  <div className="how-step-num">1</div>
+                  <div>
+                    <strong>Get categories</strong>
+                    <p className="muted">The host picks categories and a timer.</p>
+                  </div>
+                </div>
+                <div className="how-step">
+                  <div className="how-step-num">2</div>
+                  <div>
+                    <strong>Hunt clips</strong>
+                    <p className="muted">Find the best short clips from any platform.</p>
+                  </div>
+                </div>
+                <div className="how-step">
+                  <div className="how-step-num">3</div>
+                  <div>
+                    <strong>Vote + crown</strong>
+                    <p className="muted">Vote for the best clip. Most wins takes the crown.</p>
+                  </div>
+                </div>
+              </div>
+              <div className="platform-supported">
+                <p className="muted" style={{ fontSize: '0.75rem' }}>Supported platforms:</p>
+                <div className="platform-badges small">
+                  {PLATFORM_NAMES.map((name) => (
+                    <span key={name} className="platform-badge">{name}</span>
+                  ))}
+                </div>
               </div>
             </div>
           )}
-          <div className="panel-card">
+
+          {/* ─── DISCORD-STYLE CHAT ─── */}
+          <div className="panel-card chat-panel">
             <h3>Chat</h3>
-            <div className="chat-window">
+            <div className="chat-window-v2">
               {chat.length === 0 ? (
-                <p className="muted">Chat is always on. Say hi.</p>
+                <p className="muted chat-empty">Chat is always on. Say hi.</p>
               ) : (
-                chat.map((line) => (
-                  <div className="chat-line" key={line.id}>
-                    <span>{line.name}:</span> {line.message}
+                chat
+                  .filter((line) => !blockedPlayers[line.playerId])
+                  .map((line) => (
+                  <div className="chat-msg" key={line.id}>
+                    <div className="chat-msg-header">
+                      <span className="chat-msg-name">{line.name}</span>
+                      <span className="chat-msg-time">{formatChatTime(line.sentAt)}</span>
+                      {line.playerId !== playerId && (
+                        <button
+                          className="btn-micro danger chat-report-btn"
+                          title="Report message"
+                          onClick={() => sendReport(line.id)}
+                        >
+                          &#9888;
+                        </button>
+                      )}
+                    </div>
+                    <div className="chat-msg-body">{line.message}</div>
                   </div>
                 ))
               )}
+              <div ref={chatEndRef} />
             </div>
             {reportNotice && <p className="muted">{reportNotice}</p>}
             <form
-              className="chat-form"
+              className="chat-form-v2"
               onSubmit={(e) => {
                 e.preventDefault()
                 sendChat()
@@ -1524,32 +1679,31 @@ export default function Room() {
                 maxLength={chatLimit}
                 onChange={(e) => setMessage(e.target.value)}
               />
-              <span className={`chat-counter ${chatTooLong ? 'over' : ''}`}>
-                {chatCount}/{chatLimit}
-              </span>
-              <button className="btn primary" type="submit" disabled={!message.trim() || chatTooLong}>
-                Send
-              </button>
+              <div className="chat-form-footer">
+                <span className={`chat-counter ${chatTooLong ? 'over' : ''}`}>
+                  {chatCount}/{chatLimit}
+                </span>
+                <button className="btn primary chat-send" type="submit" disabled={!message.trim() || chatTooLong}>
+                  Send
+                </button>
+              </div>
             </form>
           </div>
+
           <div className="panel-card">
             <h3>Sponsor</h3>
             <Link className="sponsor-slot" to="/sponsor">
               Buy a slot
             </Link>
             <p className="muted">One sponsor per match. No popups.</p>
-            <Link className="muted" to="/donate">
-              Support the site
-            </Link>
           </div>
         </aside>
       </section>
 
       <div className="board-actions">
         <div className="actions-left">
-          <span className="room-pill">Room code: {roomCode}</span>
+          <span className="room-pill">Room: {roomCode}</span>
           <button className="btn outline action-btn" onClick={() => setInviteOpen(true)} disabled={!roomId}>
-            <span className="btn-icon">INV</span>
             Invite
           </button>
           {actionNotice && <span className="muted">{actionNotice}</span>}
@@ -1561,18 +1715,15 @@ export default function Room() {
               onClick={startHunt}
               disabled={phase !== 'lobby' || !allReady}
             >
-              <span className="btn-icon">GO</span>
               Start
             </button>
           )}
           {isHost ? (
             <button className="btn outline action-btn" onClick={closeRoom}>
-              <span className="btn-icon">X</span>
               Close room
             </button>
           ) : (
             <button className="btn outline action-btn" onClick={leaveRoom}>
-              <span className="btn-icon">OUT</span>
               Leave
             </button>
           )}
@@ -1603,7 +1754,7 @@ export default function Room() {
                 Close
               </button>
             </div>
-            <div className="modal-body">
+            <div className="modal-body invite-body-v2">
               <div className="invite-qr">
                 {inviteUrl && (
                   <img
@@ -1612,22 +1763,22 @@ export default function Room() {
                   />
                 )}
               </div>
-              <div className="invite-details">
+              <div className="invite-details-v2">
                 <p className="muted">Share this room link or code.</p>
-                <div className="invite-row">
-                  <span className="room-pill">{inviteUrl || '---'}</span>
-                  <button className="btn outline" onClick={copyInvite} disabled={!roomId}>
-                    Copy link
-                  </button>
+                <div className="invite-url-box">
+                  <span className="invite-url-text">{inviteUrl || '---'}</span>
                 </div>
-                <div className="invite-row">
+                <button className="btn primary" onClick={copyInvite} disabled={!roomId} style={{ width: '100%' }}>
+                  Copy link
+                </button>
+                <div className="invite-code-row">
                   <span className="room-pill">Code: {roomCode}</span>
                   <button className="btn ghost" onClick={copyRoomCode} disabled={!roomId}>
                     Copy code
                   </button>
                 </div>
                 {audienceEnabled && isHost && audienceCode && (
-                  <div className="invite-row">
+                  <div className="invite-code-row">
                     <span className="room-pill">Audience: {audienceCode}</span>
                     <button className="btn ghost" onClick={copyAudienceInvite} disabled={!roomId}>
                       Copy audience link
@@ -1691,11 +1842,11 @@ function mergeDrafts(existing: Record<string, string>, incoming: Record<string, 
 
 function buildShareSummary(scoreboard: ScoreboardEntry[], history: RoundHistoryEntry[]) {
   const lines: string[] = []
-  lines.push('ClipClash results')
+  lines.push('ClipDuel results')
   if (scoreboard.length > 0) {
     lines.push('Scoreboard:')
     scoreboard.forEach((entry, index) => {
-      lines.push(`${index + 1}. ${entry.displayName} — ${entry.wins} win${entry.wins === 1 ? '' : 's'}`)
+      lines.push(`${index + 1}. ${entry.displayName} \u2014 ${entry.wins} win${entry.wins === 1 ? '' : 's'}`)
     })
   }
   if (history.length > 0) {
@@ -1707,8 +1858,69 @@ function buildShareSummary(scoreboard: ScoreboardEntry[], history: RoundHistoryE
   return lines.join('\n')
 }
 
+/**
+ * Detects platform from URL and renders the appropriate embed.
+ * Falls back to a simple link if no embed is available.
+ */
+function ClipEmbed({ url }: { url: string }) {
+  const platform = detectPlatform(url)
+
+  // TikTok embed
+  if (platform === 'TikTok') {
+    const id = extractTikTokId(url)
+    if (id) {
+      return (
+        <div className="clip-frame">
+          <iframe
+            key={id}
+            className="clip-embed"
+            title={`TikTok ${id}`}
+            src={`https://www.tiktok.com/embed/v2/${id}?autoplay=1`}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            loading="lazy"
+            sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+          />
+        </div>
+      )
+    }
+  }
+
+  // YouTube embed
+  if (platform === 'YouTube Shorts') {
+    const id = extractYouTubeId(url)
+    if (id) {
+      return (
+        <div className="clip-frame">
+          <iframe
+            key={id}
+            className="clip-embed"
+            title={`YouTube ${id}`}
+            src={`https://www.youtube.com/embed/${id}?autoplay=1`}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            loading="lazy"
+          />
+        </div>
+      )
+    }
+  }
+
+  // Instagram embed - open in new tab (no reliable iframe embed)
+  // For other platforms, show a link
+  return (
+    <div className="clip-frame clip-link-fallback">
+      <p className="muted">
+        {platform ? `${platform} clip` : 'External clip'} - opens in a new tab
+      </p>
+      <a href={url} target="_blank" rel="noopener" className="btn outline">
+        Watch clip
+      </a>
+    </div>
+  )
+}
+
 function extractTikTokId(url: string) {
-  // Handle various TikTok URL formats
   const patterns = [
     /tiktok\.com\/@[\w.-]+\/video\/(\d+)/,
     /tiktok\.com\/v\/(\d+)/,
@@ -1716,32 +1928,22 @@ function extractTikTokId(url: string) {
     /vt\.tiktok\.com\/(\w+)/,
     /\/video\/(\d+)/
   ]
-
   for (const pattern of patterns) {
     const match = url.match(pattern)
     if (match?.[1]) return match[1]
   }
-
   return null
 }
 
-function TikTokEmbed({ url }: { url: string }) {
-  const id = extractTikTokId(url)
-  if (!id) {
-    return <p className="muted">Unable to embed this TikTok. Make sure you're using a direct TikTok video link.</p>
+function extractYouTubeId(url: string) {
+  const patterns = [
+    /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,
+    /youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/,
+    /youtu\.be\/([a-zA-Z0-9_-]{11})/
+  ]
+  for (const pattern of patterns) {
+    const match = url.match(pattern)
+    if (match?.[1]) return match[1]
   }
-  return (
-    <div className="tiktok-frame">
-      <iframe
-        key={id}
-        className="tiktok-embed"
-        title={`TikTok ${id}`}
-        src={`https://www.tiktok.com/embed/v2/${id}?autoplay=1`}
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-        allowFullScreen
-        loading="lazy"
-        sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-      />
-    </div>
-  )
+  return null
 }
