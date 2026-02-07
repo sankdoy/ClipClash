@@ -53,7 +53,7 @@ export async function onRequest({ env, request }: { env: Env; request: Request }
     const userId = userIdRaw.length > 0 ? userIdRaw : null
     const donationMessage = typeof metadata.donation_message === 'string' ? metadata.donation_message.trim() : ''
     const amountCents = Number(session.amount_total ?? session.amount_subtotal ?? 0)
-    const currency = typeof session.currency === 'string' ? session.currency : 'usd'
+    const currency = typeof session.currency === 'string' ? session.currency : 'gbp'
     const checkoutSessionId = typeof session.id === 'string' ? session.id : null
     const paymentIntentId = typeof session.payment_intent === 'string' ? session.payment_intent : null
     const stripeCustomerId = typeof session.customer === 'string' ? session.customer : null

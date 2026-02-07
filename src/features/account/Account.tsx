@@ -479,7 +479,7 @@ export default function Account() {
                 <span className="muted">Owned</span>
               ) : (
                 <button className="btn primary" onClick={purchaseAudienceMode} disabled={audienceLoading}>
-                  {audienceLoading ? 'Checkout...' : 'Purchase ($30)'}
+                  {audienceLoading ? 'Checkout...' : 'Purchase (£30)'}
                 </button>
               )}
             </div>

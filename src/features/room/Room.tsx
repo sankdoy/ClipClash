@@ -466,9 +466,12 @@ export default function Room() {
     }
   }, [phase, settings?.defaultTime])
 
-  // Auto-scroll chat
+  // Auto-scroll chat (only within the chat container, not the whole page)
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const el = chatEndRef.current
+    if (el?.parentElement) {
+      el.parentElement.scrollTop = el.parentElement.scrollHeight
+    }
   }, [chat])
 
   // Sponsor stinger overlay
@@ -598,6 +601,12 @@ export default function Room() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return
     ws.send(JSON.stringify({ type: 'vote_submission', entryId }))
     setVoteSelection(entryId)
+  }
+
+  const skipClip = () => {
+    const ws = socketRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'skip_clip' }))
   }
 
   const sendTiebreakChoice = (choice: RpsChoice) => {
@@ -1467,7 +1476,14 @@ export default function Room() {
                       <ClipEmbed
                         url={round.entries[Math.min(round.playbackIndex, round.entries.length - 1)]?.url ?? ''}
                       />
-                      <p className="muted">{round.remainingSeconds ?? 0}s</p>
+                      <div className="playback-controls">
+                        <p className="muted">{round.remainingSeconds ?? 0}s</p>
+                        {isHost && (
+                          <button className="btn outline" onClick={skipClip}>
+                            Next clip
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ) : round.stage === 'fester' ? (
                     <div className="fester-screen">
@@ -1557,6 +1573,27 @@ export default function Room() {
 
               {phase === 'results' && (
                 <div className="panel-card">
+                  {sponsorSlot && (
+                    <div className="sponsor-card">
+                      {sponsorSlot.imageUrl ? (
+                        <img src={sponsorSlot.imageUrl} alt={sponsorSlot.sponsorName || 'Sponsor'} />
+                      ) : (
+                        <div className="sponsor-placeholder" />
+                      )}
+                      <div className="sponsor-details">
+                        <h4>{sponsorSlot.sponsorName || 'Sponsor'}</h4>
+                        <p className="muted">{sponsorSlot.tagline}</p>
+                        <a
+                          className="btn outline"
+                          href={sponsorSlot.clickUrl || '/sponsor'}
+                          target="_blank"
+                          rel="noopener"
+                        >
+                          Visit sponsor
+                        </a>
+                      </div>
+                    </div>
+                  )}
                   <h3>Match results</h3>
                   {scoreboard.length > 0 && (
                     <div className="winner-showcase">
@@ -1587,10 +1624,15 @@ export default function Room() {
                   ) : (
                     <div className="history">
                       {history.map((entry) => (
-                        <div key={entry.categoryId} className="history-row">
-                          <span>{entry.categoryName}</span>
-                          <span>{entry.winnerName}</span>
-                          {entry.winnerClipTitle && <span className="muted">{entry.winnerClipTitle}</span>}
+                        <div key={entry.categoryId} className="history-row-results">
+                          <span className="history-category">{entry.categoryName}</span>
+                          <span className="history-winner">{entry.winnerName}</span>
+                          {entry.winnerClipTitle && <span className="history-clip-title">{entry.winnerClipTitle}</span>}
+                          {entry.winnerClipUrl && (
+                            <a href={entry.winnerClipUrl} target="_blank" rel="noopener" className="history-clip-link">
+                              Watch
+                            </a>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1604,35 +1646,8 @@ export default function Room() {
                       <button className="btn outline" onClick={copyShareText}>
                         Copy text
                       </button>
-                      <button className="btn outline" onClick={exportHistory}>
-                        Download JSON
-                      </button>
-                      <button className="btn outline" onClick={exportClipLinks}>
-                        Download clips
-                      </button>
                     </div>
                   </div>
-                  {sponsorSlot && (
-                    <div className="sponsor-card">
-                      {sponsorSlot.imageUrl ? (
-                        <img src={sponsorSlot.imageUrl} alt={sponsorSlot.sponsorName || 'Sponsor'} />
-                      ) : (
-                        <div className="sponsor-placeholder" />
-                      )}
-                      <div className="sponsor-details">
-                        <h4>{sponsorSlot.sponsorName || 'Sponsor'}</h4>
-                        <p className="muted">{sponsorSlot.tagline}</p>
-                        <a
-                          className="btn outline"
-                          href={sponsorSlot.clickUrl || '/sponsor'}
-                          target="_blank"
-                          rel="noopener"
-                        >
-                          Visit sponsor
-                        </a>
-                      </div>
-                    </div>
-                  )}
                   <a className="btn ghost" href="/sponsor" target="_blank" rel="noopener">
                     Sponsor a game
                   </a>
@@ -1983,7 +1998,7 @@ function buildShareSummary(scoreboard: ScoreboardEntry[], history: RoundHistoryE
 function ClipEmbed({ url }: { url: string }) {
   const platform = detectPlatform(url)
 
-  // TikTok embed
+  // TikTok embed (no sandbox — breaks TikTok's scripts)
   if (platform === 'TikTok') {
     const id = extractTikTokId(url)
     if (id) {
@@ -1996,8 +2011,6 @@ function ClipEmbed({ url }: { url: string }) {
             src={`https://www.tiktok.com/embed/v2/${id}?autoplay=1`}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
-            loading="lazy"
-            sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
           />
         </div>
       )
@@ -2017,19 +2030,95 @@ function ClipEmbed({ url }: { url: string }) {
             src={`https://www.youtube.com/embed/${id}?autoplay=1`}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
-            loading="lazy"
           />
         </div>
       )
     }
   }
 
-  // Instagram embed - open in new tab (no reliable iframe embed)
-  // For other platforms, show a link
+  // Instagram Reels embed
+  if (platform === 'Instagram Reels') {
+    const shortcode = extractInstagramShortcode(url)
+    if (shortcode) {
+      const embedPath = url.includes('/reel/') ? 'reel' : 'p'
+      return (
+        <div className="clip-frame">
+          <iframe
+            key={shortcode}
+            className="clip-embed"
+            title={`Instagram ${shortcode}`}
+            src={`https://www.instagram.com/${embedPath}/${shortcode}/embed/`}
+            allow="autoplay; clipboard-write; encrypted-media; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+      )
+    }
+  }
+
+  // Twitter/X embed
+  if (platform === 'Twitter/X') {
+    const tweetId = extractTweetId(url)
+    if (tweetId) {
+      return (
+        <div className="clip-frame">
+          <iframe
+            key={tweetId}
+            className="clip-embed"
+            title={`Tweet ${tweetId}`}
+            src={`https://platform.twitter.com/embed/Tweet.html?id=${tweetId}&theme=dark`}
+            allow="autoplay; encrypted-media"
+            allowFullScreen
+          />
+        </div>
+      )
+    }
+  }
+
+  // Reddit embed
+  if (platform === 'Reddit') {
+    const redditPath = extractRedditPath(url)
+    if (redditPath) {
+      return (
+        <div className="clip-frame">
+          <iframe
+            key={redditPath}
+            className="clip-embed"
+            title="Reddit clip"
+            src={`https://www.redditmedia.com${redditPath}?ref_source=embed&ref=share&embed=true&theme=dark`}
+            allow="autoplay; encrypted-media"
+            allowFullScreen
+          />
+        </div>
+      )
+    }
+  }
+
+  // Twitch Clips embed
+  if (platform === 'Twitch Clips') {
+    const clipSlug = extractTwitchClipSlug(url)
+    if (clipSlug) {
+      const parent = window.location.hostname
+      return (
+        <div className="clip-frame">
+          <iframe
+            key={clipSlug}
+            className="clip-embed"
+            title={`Twitch ${clipSlug}`}
+            src={`https://clips.twitch.tv/embed?clip=${clipSlug}&parent=${parent}&autoplay=true`}
+            allow="autoplay; encrypted-media"
+            allowFullScreen
+          />
+        </div>
+      )
+    }
+  }
+
+  // Facebook Reels — direct link (no easy embed without SDK)
   return (
     <div className="clip-frame clip-link-fallback">
       <p className="muted">
-        {platform ? `${platform} clip` : 'External clip'} - opens in a new tab
+        {platform ? `${platform} clip` : 'External clip'} — opens in a new tab
       </p>
       <a href={url} target="_blank" rel="noopener" className="btn outline">
         Watch clip
@@ -2064,6 +2153,38 @@ function extractYouTubeId(url: string) {
     if (match?.[1]) return match[1]
   }
   return null
+}
+
+function extractInstagramShortcode(url: string) {
+  const match = url.match(/instagram\.com\/(?:reel|p)\/([A-Za-z0-9_-]+)/)
+  return match?.[1] ?? null
+}
+
+function extractTweetId(url: string) {
+  const match = url.match(/(?:twitter\.com|x\.com)\/\w+\/status\/(\d+)/)
+  return match?.[1] ?? null
+}
+
+function extractRedditPath(url: string) {
+  try {
+    const parsed = new URL(url)
+    if (/reddit\.com$/.test(parsed.hostname.replace(/^www\./, ''))) {
+      // Keep the path for /r/sub/comments/id/... URLs
+      const match = parsed.pathname.match(/(\/r\/\w+\/comments\/\w+)/)
+      return match?.[1] ?? null
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+function extractTwitchClipSlug(url: string) {
+  // https://clips.twitch.tv/SlugName or https://www.twitch.tv/channel/clip/SlugName
+  const clipMatch = url.match(/clips\.twitch\.tv\/([A-Za-z0-9_-]+)/)
+  if (clipMatch?.[1]) return clipMatch[1]
+  const channelClipMatch = url.match(/twitch\.tv\/\w+\/clip\/([A-Za-z0-9_-]+)/)
+  return channelClipMatch?.[1] ?? null
 }
 
 function ClipThumbnail({ url, platform, title }: { url?: string; platform?: string; title?: string }) {

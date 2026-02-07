@@ -29,7 +29,7 @@ export async function onRequestPost({ request, env }: { request: Request; env: B
         {
           name: 'Audience Mode (one-time)',
           amountCents: AUDIENCE_PRICE_CENTS,
-          currency: 'usd',
+          currency: 'gbp',
           quantity: 1
         }
       ]

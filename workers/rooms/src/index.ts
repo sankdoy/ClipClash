@@ -137,8 +137,8 @@ const reportCooldownMs = 3000
 const maxUrlLength = 4096
 const roomCapacity = 10
 const roundPlaybackSeconds = 60
-const roundFesterSeconds = 5
-const roundPostClipsWaitSeconds = 5
+const roundFesterSeconds = 3
+const roundPostClipsWaitSeconds = 3
 const roundVoteSeconds = 20
 const roundResultSeconds = 5
 
@@ -189,6 +189,7 @@ const setDoneSchema = z.object({
 const startHuntSchema = z.object({ type: z.literal('start_hunt') })
 const resetMatchSchema = z.object({ type: z.literal('reset_match') })
 const closeRoomSchema = z.object({ type: z.literal('close_room') })
+const skipClipSchema = z.object({ type: z.literal('skip_clip') })
 const assignHostSchema = z.object({ type: z.literal('assign_host'), playerId: z.string().min(1) })
 const kickPlayerSchema = z.object({ type: z.literal('kick_player'), playerId: z.string().min(1) })
 
@@ -258,6 +259,7 @@ const clientMessageSchema = z.union([
   setStreamerModeSchema,
   setRoomVisibilitySchema,
   setRoomNameSchema,
+  skipClipSchema,
 ])
 
 
@@ -1146,6 +1148,11 @@ export class RoomsDOv2 implements DurableObject {
       if (Date.now() - session.lastVoteAt < voteCooldownMs) return
       const entry = this.round.entries.find((item) => item.id === parsed.entryId)
       if (!entry) return
+      // Block self-voting: entry.id is the playerId of the submitter
+      if (session.role === 'player' && entry.id === session.playerId) {
+        ws.send(toServerMessage({ type: 'error', message: 'You cannot vote for your own clip.' }))
+        return
+      }
       if (session.role === 'audience') {
         if (!session.audienceId) return
         if (this.votesByAudience.has(session.audienceId)) return
@@ -1162,6 +1169,39 @@ export class RoomsDOv2 implements DurableObject {
       } else {
         this.persistState()
       }
+    }
+
+    if (parsed.type === 'skip_clip') {
+      if (session.role !== 'player') return
+      if (this.phase !== 'rounds' || !this.round) return
+      if (this.hostId !== session.playerId) return
+      if (this.round.stage === 'playback' || this.round.stage === 'fester') {
+        // Advance immediately: jump to next clip or post_clips_wait
+        if (this.round.stage === 'playback') {
+          const nextIndex = this.round.playbackIndex + 1
+          if (nextIndex < this.round.entries.length) {
+            this.round.stage = 'fester'
+            this.round.remainingSeconds = roundFesterSeconds
+          } else {
+            this.round.stage = 'post_clips_wait'
+            this.round.remainingSeconds = roundPostClipsWaitSeconds
+          }
+        } else {
+          // In fester, skip to next clip or vote
+          const nextIndex = this.round.playbackIndex + 1
+          if (nextIndex < this.round.entries.length) {
+            this.round.playbackIndex = nextIndex
+            this.round.stage = 'playback'
+            this.round.remainingSeconds = roundPlaybackSeconds
+          } else {
+            this.round.stage = 'post_clips_wait'
+            this.round.remainingSeconds = roundPostClipsWaitSeconds
+          }
+        }
+        this.broadcast({ type: 'round_update', round: this.round })
+        this.persistState()
+      }
+      return
     }
 
     if (parsed.type === 'rps_choice') {
@@ -1412,11 +1452,21 @@ export class RoomsDOv2 implements DurableObject {
 
   broadcast(message: ServerMessage) {
     const payload = toServerMessage(message)
-    for (const socket of this.sessions.keys()) {
+    // Use getWebSockets() to reach ALL accepted sockets, including those
+    // not yet in the sessions Map after Durable Object hibernation.
+    const allSockets = this.state.getWebSockets()
+    for (const socket of allSockets) {
       try {
+        // Rehydrate session from attachment if missing from the in-memory map.
+        if (!this.sessions.has(socket)) {
+          const restored = (socket.deserializeAttachment?.() as Session | undefined) ?? undefined
+          if (restored) {
+            this.sessions.set(socket, restored)
+          }
+        }
         socket.send(payload)
       } catch {
-        // Don’t let a single bad socket crash the room.
+        // Don't let a single bad socket crash the room.
         try {
           socket.close(1011, 'Socket send failed')
         } catch {

@@ -68,7 +68,7 @@ export async function onRequestPost({ request, env }: { request: Request; env: B
         {
           name: 'Donation',
           amountCents,
-          currency: 'usd',
+          currency: 'gbp',
           quantity: 1
         }
       ]

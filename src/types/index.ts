@@ -160,6 +160,7 @@ export type ClientMessage =
   | { type: 'set_streamer_mode'; enabled: boolean }
   | { type: 'set_room_visibility'; visibility: 'public' | 'private' }
   | { type: 'set_room_name'; name: string }
+  | { type: 'skip_clip' }
 
 export type ServerMessage =
   | { type: 'welcome'; sessionToken: string; playerId: string; roomId: string; phase: Phase; players: Player[]; chat: ChatMessage[]; settings: Settings; timer: TimerState; categories: Category[]; scoreboard: ScoreboardEntry[]; history: RoundHistoryEntry[]; drafts: DraftsByCategory; reportCount: number; inviteCode?: string; audienceCode?: string; sponsorSlot?: SponsorSlot | null; roomVisibility?: 'public' | 'private'; roomName?: string }

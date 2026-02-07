@@ -103,7 +103,7 @@ export default function Donations() {
             <p className="muted">Log in to appear on the Top Donors leaderboard.</p>
           )}
           <label className="field">
-            Amount (USD)
+            Amount (£)
             <input
               type="number"
               min="1"
@@ -136,7 +136,7 @@ export default function Donations() {
                 {topDonors.map((donor) => (
                   <div key={donor.username} className="top-donor-row">
                     <span>{donor.username}</span>
-                    <span>{formatAmount(donor.total_cents, 'usd')}</span>
+                    <span>{formatAmount(donor.total_cents, 'gbp')}</span>
                   </div>
                 ))}
               </div>
@@ -151,9 +151,9 @@ export default function Donations() {
 function formatAmount(cents: number, currency: string) {
   const value = typeof cents === 'number' ? cents / 100 : 0
   try {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency.toUpperCase() }).format(value)
+    return new Intl.NumberFormat('en-GB', { style: 'currency', currency: currency.toUpperCase() }).format(value)
   } catch {
-    return `$${value.toFixed(2)}`
+    return `£${value.toFixed(2)}`
   }
 }
 

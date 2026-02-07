@@ -11,7 +11,7 @@ type FormState = {
 
 type BundlePrice = {
   credits: number
-  price_usd: number
+  price_gbp: number
 }
 
 type TierResponse = {
@@ -228,7 +228,7 @@ export default function Sponsor() {
   const totalCredits = Object.entries(creditBundles).reduce((sum, [credits, count]) => (
     sum + Number(credits) * count
   ), 0)
-  const totalUsd = tiers
+  const totalGbp = tiers
     ? Number((totalCredits * (tiers.pricePerCredit ?? 0)).toFixed(2))
     : 0
 
@@ -237,27 +237,29 @@ export default function Sponsor() {
       <div className="card">
         <h2>Sponsor a game</h2>
         <p className="muted">
-          One sponsor per game. Your brand appears in a 3.5s unskippable intro stinger and
-          on the results screen with a Visit Sponsor button.
+          Your brand gets a 3.5-second unskippable intro and a prominent spot on the results screen — one sponsor per game.
         </p>
-        <div className="grid">
-          <div>
-            <h3>How it works</h3>
-            <p className="muted">
-              1 credit = 1 impression. An impression is counted once per player per game.
-            </p>
+        <div className="how-to-steps">
+          <div className="how-to-step">
+            <span className="step-number">1</span>
+            <div>
+              <strong>Buy credits</strong>
+              <p className="muted">1 credit = 1 player impression. Pick a bundle below.</p>
+            </div>
           </div>
-          <div>
-            <h3>Pricing</h3>
-            <p className="muted">
-              Credits are debited per player, per game (intro + results bundled).
-            </p>
+          <div className="how-to-step">
+            <span className="step-number">2</span>
+            <div>
+              <strong>Upload your creative</strong>
+              <p className="muted">We show your image in the intro stinger and results screen.</p>
+            </div>
           </div>
-          <div>
-            <h3>Multiple buyers</h3>
-            <p className="muted">
-              Sponsors rotate fairly based on remaining credits, so small buys still get shown.
-            </p>
+          <div className="how-to-step">
+            <span className="step-number">3</span>
+            <div>
+              <strong>Get seen</strong>
+              <p className="muted">Credits are used per player per game. Sponsors rotate fairly — small buys still get shown.</p>
+            </div>
           </div>
         </div>
         {loading ? (
@@ -274,7 +276,7 @@ export default function Sponsor() {
                   <div key={bundle.credits} className="bundle-row">
                     <div>
                       <strong>{bundle.credits.toLocaleString()} credits</strong>
-                      <p className="muted">${bundle.price_usd.toFixed(2)}</p>
+                      <p className="muted">£{bundle.price_gbp.toFixed(2)}</p>
                     </div>
                     <div className="bundle-controls">
                       <button
@@ -320,7 +322,7 @@ export default function Sponsor() {
           </div>
           <div>
             <strong>Total</strong>
-            <p className="muted">${totalUsd.toFixed(2)} USD</p>
+            <p className="muted">£{totalGbp.toFixed(2)}</p>
           </div>
         </div>
         <form onSubmit={submit} className="form-stack">
@@ -414,7 +416,7 @@ export default function Sponsor() {
             type="submit"
             disabled={submitting || totalCredits <= 0 || !imageState?.valid || !!moderationError}
           >
-            {submitting ? 'Processing...' : totalCredits > 0 ? `Checkout · $${totalUsd.toFixed(2)}` : 'Select credits to continue'}
+            {submitting ? 'Processing...' : totalCredits > 0 ? `Checkout · £${totalGbp.toFixed(2)}` : 'Select credits to continue'}
           </button>
           <p className="muted" style={{ fontSize: '0.75rem' }}>
             Content is automatically moderated. Inappropriate brand names, taglines, or imagery will be rejected.

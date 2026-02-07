@@ -33,7 +33,7 @@ export async function onRequestGet({ request, env }: { request: Request; env: En
   ])
 
   const paymentsToday = await env.DB.prepare(
-    `SELECT COUNT(*) AS count, COALESCE(SUM(amount_cents), 0) AS total_cents, COALESCE(MIN(currency), 'usd') AS currency
+    `SELECT COUNT(*) AS count, COALESCE(SUM(amount_cents), 0) AS total_cents, COALESCE(MIN(currency), 'gbp') AS currency
      FROM payments
      WHERE created_at >= ?`
   )
@@ -41,7 +41,7 @@ export async function onRequestGet({ request, env }: { request: Request; env: En
     .first()
 
   const donationsToday = await env.DB.prepare(
-    `SELECT COUNT(*) AS count, COALESCE(SUM(amount_cents), 0) AS total_cents, COALESCE(MIN(currency), 'usd') AS currency
+    `SELECT COUNT(*) AS count, COALESCE(SUM(amount_cents), 0) AS total_cents, COALESCE(MIN(currency), 'gbp') AS currency
      FROM donations
      WHERE created_at >= ?`
   )
@@ -83,12 +83,12 @@ export async function onRequestGet({ request, env }: { request: Request; env: En
       payments_today: {
         count: Number(paymentsToday?.count ?? 0),
         total_cents: Number(paymentsToday?.total_cents ?? 0),
-        currency: String(paymentsToday?.currency ?? 'usd')
+        currency: String(paymentsToday?.currency ?? 'gbp')
       },
       donations_today: {
         count: Number(donationsToday?.count ?? 0),
         total_cents: Number(donationsToday?.total_cents ?? 0),
-        currency: String(donationsToday?.currency ?? 'usd')
+        currency: String(donationsToday?.currency ?? 'gbp')
       }
     },
     warnings: warnings.results ?? [],
