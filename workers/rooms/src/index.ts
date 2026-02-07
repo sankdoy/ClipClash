@@ -21,7 +21,8 @@ import type {
 } from '../../../src/types'
 import { z } from 'zod'
 import { isBlocked } from '../../../shared/moderation'
-import { isTikTokUrl, detectPlatform } from '../../../shared/tiktok'
+import { isTikTokUrl, detectPlatform, extractCreatorHandle } from '../../../shared/platforms'
+import { isNsfwUrl } from '../../../shared/nsfw'
 
 export interface Env {
   ROOMS_DO: DurableObjectNamespace
@@ -136,7 +137,10 @@ const reportCooldownMs = 3000
 const maxUrlLength = 4096
 const roomCapacity = 10
 const roundPlaybackSeconds = 60
+const roundFesterSeconds = 5
+const roundPostClipsWaitSeconds = 5
 const roundVoteSeconds = 20
+const roundResultSeconds = 5
 
 const helloSchema = z.object({
   type: z.literal('hello'),
@@ -196,13 +200,15 @@ const updateCategoriesSchema = z.object({
 const saveDraftSchema = z.object({
   type: z.literal('save_draft'),
   categoryId: z.string().min(1),
-  url: z.string().max(maxUrlLength)
+  url: z.string().max(maxUrlLength),
+  title: z.string().max(80).optional()
 })
 
 const submitSubmissionSchema = z.object({
   type: z.literal('submit_submission'),
   categoryId: z.string().min(1),
-  url: z.string().min(1).max(maxUrlLength)
+  url: z.string().min(1).max(maxUrlLength),
+  title: z.string().min(1).max(80)
 })
 
 const voteSubmissionSchema = z.object({
@@ -1227,7 +1233,7 @@ export class RoomsDOv2 implements DurableObject {
         return
       }
       const drafts = this.draftsByPlayer.get(session.playerId!) ?? {}
-      const next = { ...drafts, [parsed.categoryId]: url.slice(0, maxUrlLength) }
+      const next = { ...drafts, [parsed.categoryId]: { url: url.slice(0, maxUrlLength), title: (parsed.title ?? '').slice(0, 80) } }
       this.draftsByPlayer.set(session.playerId!, next)
       ws.send(toServerMessage({ type: 'drafts', drafts: next }))
       this.persistState()
@@ -1245,14 +1251,20 @@ export class RoomsDOv2 implements DurableObject {
         return
       }
       if (!isTikTokUrl(url)) {
-        ws.send(toServerMessage({ type: 'error', message: 'Only TikTok URLs are allowed.' }))
+        ws.send(toServerMessage({ type: 'error', message: 'Only supported clip platforms are allowed.' }))
         return
       }
+      if (isNsfwUrl(url)) {
+        ws.send(toServerMessage({ type: 'error', message: 'This URL is not allowed.' }))
+        return
+      }
+      const title = (parsed.title ?? '').trim().slice(0, 80) || 'Untitled'
       const now = Date.now()
       const entry: Submission = {
         playerId: session.playerId!,
         categoryId: parsed.categoryId,
         url,
+        title,
         createdAt: now,
         updatedAt: now
       }
@@ -1268,6 +1280,7 @@ export class RoomsDOv2 implements DurableObject {
           type: 'submission_saved',
           categoryId: parsed.categoryId,
           url,
+          title,
           updatedAt: now
         })
       )
@@ -1739,21 +1752,44 @@ export class RoomsDOv2 implements DurableObject {
         this.startNextRound()
       } else {
         this.round.remainingSeconds = Math.max(0, this.round.remainingSeconds - 1)
+
         if (this.round.stage === 'playback') {
+          if (this.round.remainingSeconds === 0) {
+            // Clip finished — enter fester pause
+            this.round.stage = 'fester'
+            this.round.remainingSeconds = roundFesterSeconds
+          }
+          this.broadcast({ type: 'round_update', round: this.round })
+        } else if (this.round.stage === 'fester') {
           if (this.round.remainingSeconds === 0) {
             const nextIndex = this.round.playbackIndex + 1
             if (nextIndex < this.round.entries.length) {
+              // More clips — play next
               this.round.playbackIndex = nextIndex
+              this.round.stage = 'playback'
               this.round.remainingSeconds = roundPlaybackSeconds
             } else {
-              this.round.stage = 'vote'
-              this.round.remainingSeconds = roundVoteSeconds
+              // All clips played — brief wait before vote
+              this.round.stage = 'post_clips_wait'
+              this.round.remainingSeconds = roundPostClipsWaitSeconds
             }
           }
           this.broadcast({ type: 'round_update', round: this.round })
-        } else {
+        } else if (this.round.stage === 'post_clips_wait') {
+          if (this.round.remainingSeconds === 0) {
+            this.round.stage = 'vote'
+            this.round.remainingSeconds = roundVoteSeconds
+          }
+          this.broadcast({ type: 'round_update', round: this.round })
+        } else if (this.round.stage === 'vote') {
           if (this.round.remainingSeconds === 0) {
             this.finishRound()
+          } else {
+            this.broadcast({ type: 'round_update', round: this.round })
+          }
+        } else if (this.round.stage === 'result') {
+          if (this.round.remainingSeconds === 0) {
+            this.round = null // triggers startNextRound on next tick
           } else {
             this.broadcast({ type: 'round_update', round: this.round })
           }
@@ -1785,6 +1821,7 @@ export class RoomsDOv2 implements DurableObject {
       this.broadcast({ type: 'timer', phase: this.phase, timer: this.timer })
       this.broadcast({ type: 'scoreboard', scoreboard: this.getScoreboard(), history: this.history })
       this.recordMatchStats()
+      this.recordGlobalSubmissions()
       this.persistState()
       return
     }
@@ -1832,12 +1869,14 @@ export class RoomsDOv2 implements DurableObject {
       entries.push({
         id: submission.playerId,
         label: '',
-        url: submission.url
+        title: submission.title || 'Untitled',
+        url: submission.url,
+        platform: detectPlatform(submission.url) ?? undefined
       })
     }
     return this.shuffle(entries).map((entry, index) => ({
       ...entry,
-      label: `${detectPlatform(entry.url) ?? 'Clip'} ${index + 1}`
+      label: `Clip ${index + 1}`
     }))
   }
 
@@ -1943,7 +1982,10 @@ export class RoomsDOv2 implements DurableObject {
     this.broadcast({ type: 'round_result', result })
     this.updateScoreboard(winnerId, this.round.categoryId, this.round.categoryName)
     this.broadcast({ type: 'scoreboard', scoreboard: this.getScoreboard(), history: this.history })
-    this.round = null
+    // Show result stage briefly before next category
+    this.round.stage = 'result'
+    this.round.winnerEntryId = winnerId
+    this.round.remainingSeconds = roundResultSeconds
     this.tiebreak = null
     this.persistState()
   }
@@ -2043,11 +2085,15 @@ export class RoomsDOv2 implements DurableObject {
     } else {
       this.scoreboard.set(winnerId, { entryId: winnerId, displayName: winnerName, wins: 1 })
     }
+    // Look up the winner's clip for history
+    const winnerSubmission = this.submissions.get(categoryId)?.get(winnerId)
     this.history.push({
       categoryId,
       categoryName,
       winnerEntryId: winnerId,
-      winnerName
+      winnerName,
+      winnerClipUrl: winnerSubmission?.url,
+      winnerClipTitle: winnerSubmission?.title
     })
   }
 
@@ -2098,6 +2144,35 @@ export class RoomsDOv2 implements DurableObject {
       }
     }
     this.resultsRecorded = true
+  }
+
+  async recordGlobalSubmissions() {
+    if (!this.env.DB) return
+    const now = new Date().toISOString()
+    const roomId = this.inviteCode ?? this.state.id.toString()
+
+    for (const [categoryId, categoryMap] of this.submissions.entries()) {
+      for (const submission of categoryMap.values()) {
+        const platform = detectPlatform(submission.url) ?? 'unknown'
+        const creatorHandle = extractCreatorHandle(submission.url)
+
+        void this.env.DB.prepare(
+          `INSERT INTO global_submissions (id, room_id, category_id, platform, creator_handle, url, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+        )
+          .bind(
+            crypto.randomUUID(),
+            roomId,
+            categoryId,
+            platform,
+            creatorHandle,
+            submission.url,
+            now
+          )
+          .run()
+          .catch(() => {})
+      }
+    }
   }
 
   getDrafts(playerId: string): DraftsByCategory {

@@ -9,6 +9,7 @@ import Donations from './features/donations/Donations'
 import Sponsor from './features/sponsor/Sponsor'
 import Settings from './features/settings/Settings'
 import Owner from './features/owner/Owner'
+import GlobalStats from './features/global-stats/GlobalStats'
 import { getMe, User } from './utils/auth'
 
 function SiteNav() {
@@ -39,6 +40,7 @@ function SiteNav() {
       <div className="site-nav-center">
         <Link className="nav-link" to="/">Home</Link>
         <Link className="nav-link" to="/leaderboard">Leaderboard</Link>
+        <Link className="nav-link" to="/stats">Stats</Link>
         <Link className="nav-link" to="/donate">Donate</Link>
         <Link className="nav-link" to="/settings">Settings</Link>
         {isOwner && <Link className="nav-link" to="/owner">Owner</Link>}
@@ -93,6 +95,7 @@ export default function App() {
                 <Route path="/account" element={<Account />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/owner" element={<Owner />} />
+                <Route path="/stats" element={<GlobalStats />} />
                 <Route path="/about" element={<About />} />
                 <Route path="/sponsor" element={<Sponsor />} />
               </Routes>

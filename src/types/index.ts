@@ -41,6 +41,7 @@ export interface Submission {
   playerId: string
   categoryId: string
   url: string
+  title: string
   createdAt: number
   updatedAt: number
 }
@@ -48,7 +49,9 @@ export interface Submission {
 export interface RoundEntry {
   id: string
   label: string
+  title: string
   url?: string
+  platform?: string
 }
 
 export interface RoundState {
@@ -56,9 +59,10 @@ export interface RoundState {
   categoryName: string
   entries: RoundEntry[]
   votesByEntryId: Record<string, number>
-  stage: 'playback' | 'vote'
+  stage: 'playback' | 'fester' | 'post_clips_wait' | 'vote' | 'result'
   playbackIndex: number
   remainingSeconds: number | null
+  winnerEntryId?: string
 }
 
 export type RpsChoice = 'rock' | 'paper' | 'scissors'
@@ -93,9 +97,11 @@ export interface RoundHistoryEntry {
   categoryName: string
   winnerEntryId: string
   winnerName: string
+  winnerClipUrl?: string
+  winnerClipTitle?: string
 }
 
-export type DraftsByCategory = Record<string, string>
+export type DraftsByCategory = Record<string, { url: string; title: string }>
 
 export interface SponsorSlot {
   status: 'empty' | 'filled'
@@ -145,8 +151,8 @@ export type ClientMessage =
   | { type: 'kick_player'; playerId: string }
   | { type: 'update_categories'; categories: Category[] }
   | { type: 'update_name'; name: string }
-  | { type: 'save_draft'; categoryId: string; url: string }
-  | { type: 'submit_submission'; categoryId: string; url: string }
+  | { type: 'save_draft'; categoryId: string; url: string; title?: string }
+  | { type: 'submit_submission'; categoryId: string; url: string; title: string }
   | { type: 'vote_submission'; entryId: string }
   | { type: 'rps_choice'; choice: RpsChoice }
   | { type: 'report'; messageId: string }
@@ -173,5 +179,5 @@ export type ServerMessage =
   | { type: 'drafts'; drafts: DraftsByCategory }
   | { type: 'settings'; settings: Settings }
   | { type: 'report_received'; messageId: string }
-  | { type: 'submission_saved'; categoryId: string; url: string; updatedAt: number }
+  | { type: 'submission_saved'; categoryId: string; url: string; title: string; updatedAt: number }
   | { type: 'error'; message: string }

@@ -72,3 +72,73 @@ export function isClipUrl(url: string): boolean {
 export function isTikTokUrl(url: string): boolean {
   return isClipUrl(url)
 }
+
+/**
+ * Extract the creator handle from a clip URL.
+ * Returns the handle (e.g. "@username") or null if not extractable.
+ */
+export function extractCreatorHandle(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    const host = parsed.hostname.replace(/^www\./, '').toLowerCase()
+    const path = parsed.pathname
+
+    // TikTok: /@username/video/...
+    if (/tiktok\.com$/.test(host)) {
+      const match = path.match(/\/@([^/]+)/)
+      return match ? `@${match[1]}` : null
+    }
+
+    // YouTube: /@channel/shorts/... or /shorts/ID (no channel in short URLs)
+    if (/youtube\.com$/.test(host) || /youtu\.be$/.test(host)) {
+      const channelMatch = path.match(/\/@([^/]+)/)
+      return channelMatch ? `@${channelMatch[1]}` : null
+    }
+
+    // Instagram: /username/reel/... or /p/...
+    if (/instagram\.com$/.test(host)) {
+      const match = path.match(/^\/([^/]+)\/(?:reel|p)/)
+      return match ? `@${match[1]}` : null
+    }
+
+    // Twitter/X: /username/status/...
+    if (/twitter\.com$/.test(host) || /x\.com$/.test(host)) {
+      const match = path.match(/^\/([^/]+)\/status/)
+      return match ? `@${match[1]}` : null
+    }
+
+    // Reddit: /r/subreddit or /u/user
+    if (/reddit\.com$/.test(host)) {
+      const match = path.match(/^\/(r|u|user)\/([^/]+)/)
+      return match ? `${match[1] === 'r' ? 'r/' : 'u/'}${match[2]}` : null
+    }
+
+    // Twitch: /channel/clip/...
+    if (/twitch\.tv$/.test(host)) {
+      const match = path.match(/^\/([^/]+)/)
+      return match && match[1] !== 'clip' && match[1] !== 'videos' ? match[1] : null
+    }
+
+    return null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Build a profile URL for a creator given their platform and handle.
+ */
+export function getCreatorProfileUrl(platform: string, handle: string): string | null {
+  if (!handle) return null
+  const clean = handle.replace(/^@/, '')
+
+  switch (platform) {
+    case 'TikTok': return `https://www.tiktok.com/@${clean}`
+    case 'YouTube Shorts': return `https://www.youtube.com/@${clean}`
+    case 'Instagram Reels': return `https://www.instagram.com/${clean}`
+    case 'Twitter/X': return `https://x.com/${clean}`
+    case 'Reddit': return `https://www.reddit.com/${handle}`
+    case 'Twitch Clips': return `https://www.twitch.tv/${clean}`
+    default: return null
+  }
+}

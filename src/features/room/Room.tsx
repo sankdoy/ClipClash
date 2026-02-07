@@ -19,7 +19,7 @@ import type {
   TieBreakState,
   TimerState
 } from '../../types'
-import { isClipUrl, detectPlatform, PLATFORM_NAMES } from '../../../shared/tiktok'
+import { isClipUrl, detectPlatform, PLATFORM_NAMES } from '../../../shared/platforms'
 
 const fallbackCategories: Category[] = [
   { id: 'cutest', name: 'Cutest' },
@@ -154,7 +154,7 @@ export default function Room() {
   const [playerId, setPlayerId] = useState<string | null>(null)
   const [sessionToken, setSessionToken] = useState<string | null>(null)
   const [message, setMessage] = useState('')
-  const [submissionDrafts, setSubmissionDrafts] = useState<Record<string, string>>({})
+  const [submissionDrafts, setSubmissionDrafts] = useState<Record<string, { url: string; title: string }>>({})
   const [submissionSaved, setSubmissionSaved] = useState<Record<string, string>>({})
   const [submissionErrors, setSubmissionErrors] = useState<Record<string, string>>({})
   const [reportNotice, setReportNotice] = useState<string | null>(null)
@@ -400,8 +400,16 @@ export default function Room() {
     const stored = window.localStorage.getItem(`tto:drafts:${roomId}`)
     if (!stored) return
     try {
-      const parsed = JSON.parse(stored) as Record<string, string>
-      setSubmissionDrafts(parsed)
+      const parsed = JSON.parse(stored)
+      const normalized: Record<string, { url: string; title: string }> = {}
+      for (const [key, value] of Object.entries(parsed)) {
+        if (typeof value === 'string') {
+          normalized[key] = { url: value, title: '' }
+        } else if (value && typeof value === 'object' && 'url' in (value as Record<string, unknown>)) {
+          normalized[key] = value as { url: string; title: string }
+        }
+      }
+      setSubmissionDrafts(normalized)
     } catch {
       return
     }
@@ -785,6 +793,23 @@ export default function Room() {
     URL.revokeObjectURL(url)
   }
 
+  const exportClipLinks = () => {
+    const lines: string[] = ['ClipDuel - All Clip Links', '']
+    history.forEach((h) => {
+      lines.push(`${h.categoryName} - Winner: ${h.winnerName}`)
+      if (h.winnerClipTitle) lines.push(`  Title: ${h.winnerClipTitle}`)
+      if (h.winnerClipUrl) lines.push(`  ${h.winnerClipUrl}`)
+      lines.push('')
+    })
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `clipduel-${roomId ?? 'room'}-clips.txt`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   const copyShareText = async () => {
     const summary = buildShareSummary(scoreboard, history)
     try {
@@ -822,7 +847,7 @@ export default function Room() {
     }
   }, [timer?.targetMinutes])
 
-  const queueSubmission = (categoryId: string, url: string, immediate = false) => {
+  const queueSubmission = (categoryId: string, url: string, title: string, immediate = false) => {
     const timers = submitTimersRef.current
     if (timers[categoryId]) {
       window.clearTimeout(timers[categoryId])
@@ -851,7 +876,7 @@ export default function Room() {
       })
       const ws = socketRef.current
       if (!ws || ws.readyState !== WebSocket.OPEN) return
-      ws.send(JSON.stringify({ type: 'submit_submission', categoryId, url: trimmed }))
+      ws.send(JSON.stringify({ type: 'submit_submission', categoryId, url: trimmed, title: title.trim() || 'Untitled' }))
     }
     if (immediate) {
       run()
@@ -886,27 +911,38 @@ export default function Room() {
         <div className="panel-card">
           {phase === 'rounds' && round ? (
             <>
-              <h3>{round.stage === 'vote' ? 'Vote now' : 'Watching clips'}</h3>
+              <h3>
+                {round.stage === 'playback' ? 'Watching clips' :
+                 round.stage === 'fester' ? 'Fester...' :
+                 round.stage === 'post_clips_wait' ? 'Get ready to vote' :
+                 round.stage === 'vote' ? 'Vote now' :
+                 round.stage === 'result' ? 'Winner!' : 'Round'}
+              </h3>
               <p className="muted">Category: {round.categoryName}</p>
               {round.stage === 'vote' ? (
                 <>
                   <p className="muted">Vote time remaining: {round.remainingSeconds ?? 0}s</p>
-                  <div className="round-grid">
-                    {round.entries.map((entry) => (
+                  <div className="vote-grid">
+                    {round.entries.map((entry, idx) => (
                       <button
                         key={entry.id}
-                        className={`round-entry ${voteSelection === entry.id ? 'selected' : ''}`}
+                        className={`vote-card ${voteSelection === entry.id ? 'voted' : ''}`}
                         onClick={() => sendVoteEntry(entry.id)}
                         disabled={!!tiebreak || !!voteSelection}
                       >
-                        <div className="round-thumb" aria-hidden="true" />
-                        <span className="round-label">{entry.label}</span>
+                        <ClipThumbnail url={entry.url} platform={entry.platform} title={entry.title} />
+                        <span className="vote-card-title">{entry.title || `Clip ${idx + 1}`}</span>
+                        <span className="vote-card-label">{entry.label}</span>
                       </button>
                     ))}
                   </div>
                 </>
+              ) : round.stage === 'fester' ? (
+                <p className="fester-text">Letting that clip fester in your mind...</p>
+              ) : round.stage === 'result' && round.winnerEntryId ? (
+                <p className="muted">Winner: {round.entries.find((e) => e.id === round.winnerEntryId)?.label ?? 'TBD'}</p>
               ) : (
-                <p className="muted">Voting opens after all clips play.</p>
+                <p className="muted">{round.remainingSeconds ?? 0}s</p>
               )}
             </>
           ) : (
@@ -1325,16 +1361,14 @@ export default function Room() {
                   </p>
                 )}
                 {phase === 'rounds' && (
-                  <>
-                    <p className="muted">
-                      Category: <strong>{round?.categoryName ?? '...'}</strong>
-                    </p>
-                    {round?.stage === 'vote' ? (
-                      <p className="muted">Vote time remaining: {round?.remainingSeconds ?? 0}s</p>
-                    ) : (
-                      <p className="muted">Watching clips. Voting opens after all clips play.</p>
-                    )}
-                  </>
+                  <p className="muted">
+                    Category: <strong>{round?.categoryName ?? '...'}</strong>
+                    {round?.stage === 'playback' && ` - Clip ${Math.min((round?.playbackIndex ?? 0) + 1, round?.entries.length ?? 0)}/${round?.entries.length ?? 0}`}
+                    {round?.stage === 'fester' && ' - Fester...'}
+                    {round?.stage === 'post_clips_wait' && ' - Voting soon'}
+                    {round?.stage === 'vote' && ` - Vote! ${round?.remainingSeconds ?? 0}s`}
+                    {round?.stage === 'result' && ' - Winner!'}
+                  </p>
                 )}
                 {phase === 'results' && (
                   <p className="muted">Match complete. Share results or play again below.</p>
@@ -1354,8 +1388,10 @@ export default function Room() {
                   </p>
                   <div className="category-grid">
                     {categories.map((category) => {
-                      const draft = submissionDrafts[category.id] ?? ''
-                      const platform = draft ? detectPlatform(draft) : null
+                      const draftObj = submissionDrafts[category.id]
+                      const draftUrl = draftObj?.url ?? ''
+                      const draftTitle = draftObj?.title ?? ''
+                      const platform = draftUrl ? detectPlatform(draftUrl) : null
                       return (
                         <div key={category.id} className="category-card">
                           <div>
@@ -1366,26 +1402,46 @@ export default function Room() {
                             {!submissionSaved[category.id] && submissionErrors[category.id] && (
                               <p className="error">{submissionErrors[category.id]}</p>
                             )}
-                            {!submissionSaved[category.id] && !submissionErrors[category.id] && draft && (
+                            {!submissionSaved[category.id] && !submissionErrors[category.id] && draftUrl && (
                               <p className="muted">Draft {platform ? `- ${platform}` : '- validating...'}</p>
                             )}
-                            {!draft && !submissionSaved[category.id] && !submissionErrors[category.id] && (
+                            {!draftUrl && !submissionSaved[category.id] && !submissionErrors[category.id] && (
                               <p className="muted">No submission yet.</p>
                             )}
                           </div>
                           <div className="category-actions">
                             <input
                               type="text"
+                              placeholder="Title your clip"
+                              value={draftTitle}
+                              onChange={(e) => {
+                                const title = e.target.value
+                                const currentUrl = submissionDrafts[category.id]?.url ?? ''
+                                setSubmissionDrafts((prev) => ({
+                                  ...prev,
+                                  [category.id]: { url: prev[category.id]?.url ?? '', title }
+                                }))
+                                if (currentUrl.trim() && isClipUrl(currentUrl.trim())) {
+                                  queueSubmission(category.id, currentUrl, title)
+                                }
+                              }}
+                              disabled={phase !== 'hunt'}
+                              maxLength={80}
+                            />
+                            <input
+                              type="text"
                               placeholder="Paste clip URL (TikTok, YouTube, Insta...)"
-                              value={draft}
-                              onChange={(e) =>
-                                setSubmissionDrafts((prev) => {
-                                  const next = { ...prev, [category.id]: e.target.value }
-                                  queueSubmission(category.id, e.target.value)
-                                  return next
-                                })
-                              }
-                              onBlur={(e) => queueSubmission(category.id, e.target.value, true)}
+                              value={draftUrl}
+                              onChange={(e) => {
+                                const url = e.target.value
+                                const currentTitle = submissionDrafts[category.id]?.title ?? ''
+                                setSubmissionDrafts((prev) => ({
+                                  ...prev,
+                                  [category.id]: { url, title: prev[category.id]?.title ?? '' }
+                                }))
+                                queueSubmission(category.id, url, currentTitle)
+                              }}
+                              onBlur={(e) => queueSubmission(category.id, e.target.value, submissionDrafts[category.id]?.title ?? '', true)}
                               disabled={phase !== 'hunt'}
                             />
                           </div>
@@ -1398,77 +1454,98 @@ export default function Room() {
 
               {phase === 'rounds' && (
                 <div className="panel-card">
-                  <h3>Round voting</h3>
-                  <p className="muted">
-                    Category: <strong>{round?.categoryName ?? '...'}</strong>
-                  </p>
-                  <div className="playback-card">
-                    {!round || (round.entries ?? []).length === 0 ? (
-                      <p className="muted">No valid submissions to play.</p>
-                    ) : round.stage === 'playback' ? (
-                      <>
-                        <p className="muted">
-                          Now playing:{' '}
-                          <strong>
-                            {round.entries[Math.min(round.playbackIndex, round.entries.length - 1)]?.label ??
-                              `Clip ${round.playbackIndex + 1}`}
-                          </strong>
-                        </p>
-                        <ClipEmbed
-                          url={
-                            round.entries[Math.min(round.playbackIndex, round.entries.length - 1)]?.url ?? ''
-                          }
-                        />
-                        <p className="muted">
-                          Clip {Math.min(round.playbackIndex + 1, round.entries.length)}/{round.entries.length}
-                        </p>
-                      </>
-                    ) : (
-                      <p className="muted">All clips played. Vote now.</p>
-                    )}
-                  </div>
-                  <div className="round-grid">
-                    {(round?.entries ?? []).map((entry) => (
-                      <button
-                        key={entry.id}
-                        className={`round-entry ${voteSelection === entry.id ? 'selected' : ''}`}
-                        onClick={() => sendVoteEntry(entry.id)}
-                        disabled={!!tiebreak || round?.stage !== 'vote' || !!voteSelection}
-                      >
-                        <span>{entry.label}</span>
-                        <span className="muted">{entry.url ? 'Clip submitted' : 'No submission'}</span>
-                      </button>
-                    ))}
-                  </div>
-                  {round?.stage === 'vote' && (
-                    <p className="muted">Vote time remaining: {round?.remainingSeconds ?? 0}s</p>
-                  )}
-                  {tiebreak && (
-                    <div className="tiebreak">
-                      <p className="muted">Tie-breaker: Rock-Paper-Scissors</p>
-                      <div className="tiebreak-grid">
-                        {(['rock', 'paper', 'scissors'] as RpsChoice[]).map((choice) => (
+                  {!round || (round.entries ?? []).length === 0 ? (
+                    <div className="wait-screen">
+                      <p>Waiting for the round to start...</p>
+                    </div>
+                  ) : round.stage === 'playback' ? (
+                    <div className="playback-screen">
+                      <p className="round-stage-label">
+                        Clip {Math.min(round.playbackIndex + 1, round.entries.length)} of {round.entries.length}
+                      </p>
+                      <p className="muted">Category: <strong>{round.categoryName}</strong></p>
+                      <ClipEmbed
+                        url={round.entries[Math.min(round.playbackIndex, round.entries.length - 1)]?.url ?? ''}
+                      />
+                      <p className="muted">{round.remainingSeconds ?? 0}s</p>
+                    </div>
+                  ) : round.stage === 'fester' ? (
+                    <div className="fester-screen">
+                      <p className="fester-text">Letting that clip fester in your mind...</p>
+                      <p className="fester-countdown">{round.remainingSeconds ?? 0}s</p>
+                    </div>
+                  ) : round.stage === 'post_clips_wait' ? (
+                    <div className="wait-screen">
+                      <p className="wait-text">All clips played. Voting opens soon...</p>
+                      <p className="muted">{round.remainingSeconds ?? 0}s</p>
+                    </div>
+                  ) : round.stage === 'vote' ? (
+                    <div className="vote-section">
+                      <h3>Vote - {round.categoryName}</h3>
+                      <p className="muted">Pick your favourite clip. {round.remainingSeconds ?? 0}s remaining</p>
+                      <div className="vote-grid">
+                        {round.entries.map((entry, idx) => (
                           <button
-                            key={choice}
-                            className={`btn outline ${tiebreakChoice === choice ? 'active' : ''}`}
-                            onClick={() => sendTiebreakChoice(choice)}
+                            key={entry.id}
+                            className={`vote-card ${voteSelection === entry.id ? 'voted' : ''}`}
+                            onClick={() => sendVoteEntry(entry.id)}
+                            disabled={!!voteSelection || !!tiebreak}
                           >
-                            {choice}
+                            <ClipThumbnail url={entry.url} platform={entry.platform} title={entry.title} />
+                            <span className="vote-card-title">{entry.title || `Clip ${idx + 1}`}</span>
+                            <span className="vote-card-label">{entry.label}</span>
                           </button>
                         ))}
                       </div>
-                      <p className="muted">Tie-break time remaining: {tiebreak.remainingSeconds ?? 0}s</p>
-                      {tiebreak.winnerEntryId && (
-                        <div className="round-result">
-                          <p>
-                            Tie-break winner:{' '}
-                            <strong>{getWinnerLabelFromEntries(tiebreak.winnerEntryId, round?.entries ?? [])}</strong>
-                          </p>
+                      {voteSelection && <p className="muted">Vote locked in.</p>}
+                      {tiebreak && (
+                        <div className="tiebreak">
+                          <p className="muted">Tie-breaker: Rock-Paper-Scissors</p>
+                          <div className="tiebreak-grid">
+                            {(['rock', 'paper', 'scissors'] as RpsChoice[]).map((choice) => (
+                              <button
+                                key={choice}
+                                className={`btn outline ${tiebreakChoice === choice ? 'active' : ''}`}
+                                onClick={() => sendTiebreakChoice(choice)}
+                              >
+                                {choice}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="muted">Tie-break: {tiebreak.remainingSeconds ?? 0}s</p>
+                          {tiebreak.winnerEntryId && (
+                            <div className="round-result">
+                              <p>
+                                Tie-break winner:{' '}
+                                <strong>{getWinnerLabelFromEntries(tiebreak.winnerEntryId, round.entries)}</strong>
+                              </p>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
+                  ) : round.stage === 'result' ? (
+                    <div className="winner-reveal">
+                      <h3>{round.categoryName} - Winner</h3>
+                      {round.winnerEntryId && (() => {
+                        const winnerEntry = round.entries.find((e) => e.id === round.winnerEntryId)
+                        if (!winnerEntry) return <p className="muted">Calculating...</p>
+                        return (
+                          <>
+                            <p className="winner-entry-label">{winnerEntry.label}</p>
+                            <p className="winner-entry-title">{winnerEntry.title || 'Untitled'}</p>
+                            <ClipThumbnail url={winnerEntry.url} platform={winnerEntry.platform} title={winnerEntry.title} />
+                          </>
+                        )
+                      })()}
+                      <p className="muted">Next category in {round.remainingSeconds ?? 0}s...</p>
+                    </div>
+                  ) : (
+                    <div className="wait-screen">
+                      <p>Loading round...</p>
+                    </div>
                   )}
-                  {roundResult && (
+                  {roundResult && round?.stage !== 'result' && (
                     <div className="round-result">
                       <p>
                         Winner: <strong>{getWinnerLabel(roundResult, round?.entries ?? [])}</strong>
@@ -1481,6 +1558,30 @@ export default function Room() {
               {phase === 'results' && (
                 <div className="panel-card">
                   <h3>Match results</h3>
+                  {scoreboard.length > 0 && (
+                    <div className="winner-showcase">
+                      <div className="winner-profile">
+                        <div className="winner-avatar">{scoreboard[0].displayName.slice(0, 1).toUpperCase()}</div>
+                        <h2>{scoreboard[0].displayName}</h2>
+                        <p className="muted">{scoreboard[0].wins} win{scoreboard[0].wins !== 1 ? 's' : ''} - Champion</p>
+                      </div>
+                      <div className="winner-clips">
+                        {history
+                          .filter((h) => h.winnerName === scoreboard[0].displayName)
+                          .map((h) => (
+                            <div key={h.categoryId} className="winner-clip-card">
+                              <span className="winner-clip-category">{h.categoryName}</span>
+                              <span className="winner-clip-title">{h.winnerClipTitle || 'Untitled'}</span>
+                              {h.winnerClipUrl && (
+                                <a href={h.winnerClipUrl} target="_blank" rel="noopener" className="btn outline">
+                                  Watch clip
+                                </a>
+                              )}
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
                   {history.length === 0 ? (
                     <p className="muted">No rounds played.</p>
                   ) : (
@@ -1489,6 +1590,7 @@ export default function Room() {
                         <div key={entry.categoryId} className="history-row">
                           <span>{entry.categoryName}</span>
                           <span>{entry.winnerName}</span>
+                          {entry.winnerClipTitle && <span className="muted">{entry.winnerClipTitle}</span>}
                         </div>
                       ))}
                     </div>
@@ -1504,6 +1606,9 @@ export default function Room() {
                       </button>
                       <button className="btn outline" onClick={exportHistory}>
                         Download JSON
+                      </button>
+                      <button className="btn outline" onClick={exportClipLinks}>
+                        Download clips
                       </button>
                     </div>
                   </div>
@@ -1566,13 +1671,19 @@ export default function Room() {
               </p>
               {!round ? (
                 <p className="muted">Waiting for the round to start...</p>
-              ) : round.stage === 'vote' ? (
-                <p className="muted">Vote time remaining: {round.remainingSeconds ?? 0}s</p>
-              ) : (
+              ) : round.stage === 'playback' ? (
                 <p className="muted">
-                  Watching clips {Math.min(round.playbackIndex + 1, round.entries.length)}/{round.entries.length}
+                  Watching clip {Math.min(round.playbackIndex + 1, round.entries.length)}/{round.entries.length} - {round.remainingSeconds ?? 0}s
                 </p>
-              )}
+              ) : round.stage === 'fester' ? (
+                <p className="muted">Fester pause... {round.remainingSeconds ?? 0}s</p>
+              ) : round.stage === 'post_clips_wait' ? (
+                <p className="muted">Voting opens in {round.remainingSeconds ?? 0}s</p>
+              ) : round.stage === 'vote' ? (
+                <p className="muted">Vote now! {round.remainingSeconds ?? 0}s</p>
+              ) : round.stage === 'result' ? (
+                <p className="muted">Winner revealed! Next in {round.remainingSeconds ?? 0}s</p>
+              ) : null}
               <p className="muted">
                 Your vote:{' '}
                 {voteSelection
@@ -1830,10 +1941,16 @@ function categoriesMatchPreset(categories: Category[], preset: Category[]) {
   return categories.every((category, index) => category.name === preset[index]?.name)
 }
 
-function mergeDrafts(existing: Record<string, string>, incoming: Record<string, string>) {
-  const next = { ...incoming }
+function mergeDrafts(
+  existing: Record<string, { url: string; title: string }>,
+  incoming: Record<string, { url: string; title: string } | string>
+) {
+  const next: Record<string, { url: string; title: string }> = {}
+  for (const [key, value] of Object.entries(incoming)) {
+    next[key] = typeof value === 'string' ? { url: value, title: '' } : value
+  }
   for (const [key, value] of Object.entries(existing)) {
-    if (value && value.trim().length > 0) {
+    if (value && value.url && value.url.trim().length > 0) {
       next[key] = value
     }
   }
@@ -1852,7 +1969,8 @@ function buildShareSummary(scoreboard: ScoreboardEntry[], history: RoundHistoryE
   if (history.length > 0) {
     lines.push('Rounds:')
     history.forEach((entry) => {
-      lines.push(`- ${entry.categoryName}: ${entry.winnerName}`)
+      const clipInfo = entry.winnerClipTitle ? ` "${entry.winnerClipTitle}"` : ''
+      lines.push(`- ${entry.categoryName}: ${entry.winnerName}${clipInfo}`)
     })
   }
   return lines.join('\n')
@@ -1946,4 +2064,21 @@ function extractYouTubeId(url: string) {
     if (match?.[1]) return match[1]
   }
   return null
+}
+
+function ClipThumbnail({ url, platform, title }: { url?: string; platform?: string; title?: string }) {
+  if (url) {
+    const detectedPlatform = platform || detectPlatform(url) || ''
+    if (detectedPlatform === 'YouTube Shorts') {
+      const id = extractYouTubeId(url)
+      if (id) {
+        return <img className="clip-thumb" src={`https://img.youtube.com/vi/${id}/hqdefault.jpg`} alt={title || 'Thumbnail'} />
+      }
+    }
+  }
+  return (
+    <div className="clip-thumb-fallback">
+      <span className="platform-badge">{platform || 'Clip'}</span>
+    </div>
+  )
 }
