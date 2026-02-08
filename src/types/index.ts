@@ -42,6 +42,7 @@ export interface Submission {
   categoryId: string
   url: string
   title: string
+  videoUrl?: string
   createdAt: number
   updatedAt: number
 }
@@ -51,6 +52,7 @@ export interface RoundEntry {
   label: string
   title: string
   url?: string
+  videoUrl?: string
   platform?: string
 }
 

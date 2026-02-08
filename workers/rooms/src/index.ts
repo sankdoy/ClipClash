@@ -209,7 +209,8 @@ const submitSubmissionSchema = z.object({
   type: z.literal('submit_submission'),
   categoryId: z.string().min(1),
   url: z.string().min(1).max(maxUrlLength),
-  title: z.string().min(1).max(80)
+  title: z.string().min(1).max(80),
+  videoUrl: z.string().max(500).optional()
 })
 
 const voteSubmissionSchema = z.object({
@@ -1299,12 +1300,14 @@ export class RoomsDOv2 implements DurableObject {
         return
       }
       const title = (parsed.title ?? '').trim().slice(0, 80) || 'Untitled'
+      const videoUrl = typeof parsed.videoUrl === 'string' && parsed.videoUrl.length > 0 ? parsed.videoUrl : undefined
       const now = Date.now()
       const entry: Submission = {
         playerId: session.playerId!,
         categoryId: parsed.categoryId,
         url,
         title,
+        videoUrl,
         createdAt: now,
         updatedAt: now
       }
@@ -1921,6 +1924,7 @@ export class RoomsDOv2 implements DurableObject {
         label: '',
         title: submission.title || 'Untitled',
         url: submission.url,
+        videoUrl: submission.videoUrl,
         platform: detectPlatform(submission.url) ?? undefined
       })
     }

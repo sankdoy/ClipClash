@@ -882,12 +882,14 @@ export default function Room() {
     }
   }, [timer?.targetMinutes])
 
+  const extractingRef = useRef<Record<string, boolean>>({})
+
   const queueSubmission = (categoryId: string, url: string, title: string, immediate = false) => {
     const timers = submitTimersRef.current
     if (timers[categoryId]) {
       window.clearTimeout(timers[categoryId])
     }
-    const run = () => {
+    const run = async () => {
       const trimmed = url.trim()
       if (!trimmed) {
         setSubmissionErrors((prev) => {
@@ -911,7 +913,36 @@ export default function Room() {
       })
       const ws = socketRef.current
       if (!ws || ws.readyState !== WebSocket.OPEN) return
+
+      // Extract video in background — submit to DO immediately, then update with videoUrl
       ws.send(JSON.stringify({ type: 'submit_submission', categoryId, url: trimmed, title: title.trim() || 'Untitled' }))
+
+      // Start video extraction if not already extracting this URL
+      if (!extractingRef.current[trimmed]) {
+        extractingRef.current[trimmed] = true
+        try {
+          const res = await fetch('/api/video/extract', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ url: trimmed })
+          })
+          const data = await res.json()
+          if (data?.ok && data.serveUrl) {
+            // Re-submit with the video URL attached
+            ws.send(JSON.stringify({
+              type: 'submit_submission',
+              categoryId,
+              url: trimmed,
+              title: title.trim() || 'Untitled',
+              videoUrl: data.serveUrl
+            }))
+          }
+        } catch {
+          // Extraction failed — fall back to iframe embed (no action needed)
+        } finally {
+          delete extractingRef.current[trimmed]
+        }
+      }
     }
     if (immediate) {
       run()
@@ -1501,6 +1532,8 @@ export default function Room() {
                       <p className="muted">Category: <strong>{round.categoryName}</strong></p>
                       <ClipEmbed
                         url={round.entries[Math.min(round.playbackIndex, round.entries.length - 1)]?.url ?? ''}
+                        videoUrl={round.entries[Math.min(round.playbackIndex, round.entries.length - 1)]?.videoUrl}
+                        onEnded={isHost ? skipClip : undefined}
                       />
                       <div className="playback-controls">
                         <p className="muted">{round.remainingSeconds ?? 0}s</p>
@@ -2021,29 +2054,27 @@ function buildShareSummary(scoreboard: ScoreboardEntry[], history: RoundHistoryE
  * Detects platform from URL and renders the appropriate embed.
  * Falls back to a simple link if no embed is available.
  */
-function ClipEmbed({ url }: { url: string }) {
-  const platform = detectPlatform(url)
-
-  // TikTok embed (no sandbox — breaks TikTok's scripts)
-  if (platform === 'TikTok') {
-    const id = extractTikTokId(url)
-    if (id) {
-      return (
-        <div className="clip-frame">
-          <iframe
-            key={id}
-            className="clip-embed"
-            title={`TikTok ${id}`}
-            src={`https://www.tiktok.com/embed/v2/${id}?autoplay=1`}
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          />
-        </div>
-      )
-    }
+function ClipEmbed({ url, videoUrl, onEnded }: { url: string; videoUrl?: string; onEnded?: () => void }) {
+  // If we have a proxied video URL, use native <video> — clean, autoplay, consistent
+  if (videoUrl) {
+    return (
+      <div className="clip-frame clip-native">
+        <video
+          key={videoUrl}
+          className="clip-video"
+          src={videoUrl}
+          autoPlay
+          playsInline
+          controls
+          onEnded={onEnded}
+        />
+      </div>
+    )
   }
 
-  // YouTube embed
+  const platform = detectPlatform(url)
+
+  // YouTube embed — works well natively, keep as iframe
   if (platform === 'YouTube Shorts') {
     const id = extractYouTubeId(url)
     if (id) {
@@ -2062,92 +2093,14 @@ function ClipEmbed({ url }: { url: string }) {
     }
   }
 
-  // Instagram Reels embed
-  if (platform === 'Instagram Reels') {
-    const shortcode = extractInstagramShortcode(url)
-    if (shortcode) {
-      const embedPath = url.includes('/reel/') ? 'reel' : 'p'
-      return (
-        <div className="clip-frame">
-          <iframe
-            key={shortcode}
-            className="clip-embed"
-            title={`Instagram ${shortcode}`}
-            src={`https://www.instagram.com/${embedPath}/${shortcode}/embed/`}
-            allow="autoplay; clipboard-write; encrypted-media; picture-in-picture"
-            allowFullScreen
-          />
-        </div>
-      )
-    }
-  }
-
-  // Twitter/X embed
-  if (platform === 'Twitter/X') {
-    const tweetId = extractTweetId(url)
-    if (tweetId) {
-      return (
-        <div className="clip-frame">
-          <iframe
-            key={tweetId}
-            className="clip-embed"
-            title={`Tweet ${tweetId}`}
-            src={`https://platform.twitter.com/embed/Tweet.html?id=${tweetId}&theme=dark`}
-            allow="autoplay; encrypted-media"
-            allowFullScreen
-          />
-        </div>
-      )
-    }
-  }
-
-  // Reddit embed
-  if (platform === 'Reddit') {
-    const redditPath = extractRedditPath(url)
-    if (redditPath) {
-      return (
-        <div className="clip-frame">
-          <iframe
-            key={redditPath}
-            className="clip-embed"
-            title="Reddit clip"
-            src={`https://www.redditmedia.com${redditPath}?ref_source=embed&ref=share&embed=true&theme=dark`}
-            allow="autoplay; encrypted-media"
-            allowFullScreen
-          />
-        </div>
-      )
-    }
-  }
-
-  // Twitch Clips embed
-  if (platform === 'Twitch Clips') {
-    const clipSlug = extractTwitchClipSlug(url)
-    if (clipSlug) {
-      const parent = window.location.hostname
-      return (
-        <div className="clip-frame">
-          <iframe
-            key={clipSlug}
-            className="clip-embed"
-            title={`Twitch ${clipSlug}`}
-            src={`https://clips.twitch.tv/embed?clip=${clipSlug}&parent=${parent}&autoplay=true`}
-            allow="autoplay; encrypted-media"
-            allowFullScreen
-          />
-        </div>
-      )
-    }
-  }
-
-  // Facebook Reels — direct link (no easy embed without SDK)
+  // Fallback for any platform where video extraction failed
   return (
     <div className="clip-frame clip-link-fallback">
       <p className="muted">
-        {platform ? `${platform} clip` : 'External clip'} — opens in a new tab
+        {platform ? `${platform} clip` : 'Clip'} — video is loading or unavailable
       </p>
       <a href={url} target="_blank" rel="noopener" className="btn outline">
-        Watch clip
+        Watch externally
       </a>
     </div>
   )
