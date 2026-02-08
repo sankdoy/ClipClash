@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { getMe } from '../../utils/auth'
 import { generateRandomUsername } from '../../utils/username'
+import {
+  cancelTimerNotification,
+  requestNotificationPermission,
+  scheduleTimerNotification
+} from '../../utils/notifications'
 import type {
   Category,
   ChatMessage,
@@ -465,6 +470,27 @@ export default function Room() {
       }
     }
   }, [phase, settings?.defaultTime])
+
+  // Native notifications for phase transitions (Capacitor only)
+  useEffect(() => {
+    if (phase === 'hunt') {
+      const remaining = timer?.huntRemainingSeconds ?? (settings?.defaultTime ?? 10) * 60
+      if (remaining > 5) {
+        scheduleTimerNotification('Hunt is over!', 'Time to watch clips and vote.', remaining)
+      }
+    } else if (phase === 'rounds' && round?.stage === 'vote') {
+      scheduleTimerNotification('Time to vote!', 'Pick your favourite clip.', 0)
+    } else if (phase === 'results') {
+      scheduleTimerNotification('Results are in!', 'See who won this round.', 0)
+    } else {
+      cancelTimerNotification()
+    }
+  }, [phase, round?.stage])
+
+  // Request notification permission once when joining a room
+  useEffect(() => {
+    requestNotificationPermission()
+  }, [])
 
   // Auto-scroll chat (only within the chat container, not the whole page)
   useEffect(() => {

@@ -11,3 +11,7 @@ src/types/**/*.js
 src/types/**/*.js.map
 workers/rooms/src/**/*.js
 workers/rooms/src/**/*.js.map
+
+# Capacitor native projects (regenerated from cap add)
+ios/
+android/
