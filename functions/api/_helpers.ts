@@ -7,7 +7,6 @@ export type Env = {
   MAIL_FROM_EMAIL?: string
   MAIL_FROM_NAME?: string
   SITE_URL?: string
-  COBALT_API_URL?: string
 }
 
 export function json(data: unknown, init: ResponseInit = {}) {

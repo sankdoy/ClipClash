@@ -958,8 +958,8 @@ export default function Room() {
               videoUrl: uploadData.serveUrl
             }))
           }
-        } catch {
-          // Pipeline failed — clip will use fallback embed (no action needed)
+        } catch (err) {
+          console.warn('[video-extract] Pipeline failed for', trimmed, err)
         } finally {
           delete extractingRef.current[trimmed]
         }
@@ -2114,7 +2114,100 @@ function ClipEmbed({ url, videoUrl, onEnded }: { url: string; videoUrl?: string;
     }
   }
 
-  // Fallback for any platform where video extraction failed
+  // TikTok embed
+  if (platform === 'TikTok') {
+    const id = extractTikTokId(url)
+    if (id) {
+      return (
+        <div className="clip-frame">
+          <iframe
+            key={id}
+            className="clip-embed"
+            title={`TikTok ${id}`}
+            src={`https://www.tiktok.com/embed/v2/${id}`}
+            allow="autoplay; encrypted-media"
+            allowFullScreen
+          />
+        </div>
+      )
+    }
+  }
+
+  // Instagram embed
+  if (platform === 'Instagram Reels') {
+    const shortcode = extractInstagramShortcode(url)
+    if (shortcode) {
+      return (
+        <div className="clip-frame">
+          <iframe
+            key={shortcode}
+            className="clip-embed"
+            title={`Instagram ${shortcode}`}
+            src={`https://www.instagram.com/reel/${shortcode}/embed/`}
+            allowFullScreen
+          />
+        </div>
+      )
+    }
+  }
+
+  // Twitter/X embed
+  if (platform === 'Twitter/X') {
+    const tweetId = extractTweetId(url)
+    if (tweetId) {
+      return (
+        <div className="clip-frame">
+          <iframe
+            key={tweetId}
+            className="clip-embed"
+            title={`Tweet ${tweetId}`}
+            src={`https://platform.twitter.com/embed/Tweet.html?id=${tweetId}`}
+            allowFullScreen
+          />
+        </div>
+      )
+    }
+  }
+
+  // Reddit embed
+  if (platform === 'Reddit') {
+    const redditPath = extractRedditPath(url)
+    if (redditPath) {
+      return (
+        <div className="clip-frame">
+          <iframe
+            key={redditPath}
+            className="clip-embed"
+            title="Reddit clip"
+            src={`https://www.redditmedia.com${redditPath}?ref_source=embed&embed=true`}
+            allowFullScreen
+            sandbox="allow-scripts allow-same-origin allow-popups"
+          />
+        </div>
+      )
+    }
+  }
+
+  // Twitch clip embed
+  if (platform === 'Twitch') {
+    const slug = extractTwitchClipSlug(url)
+    if (slug) {
+      return (
+        <div className="clip-frame">
+          <iframe
+            key={slug}
+            className="clip-embed"
+            title={`Twitch ${slug}`}
+            src={`https://clips.twitch.tv/embed?clip=${slug}&parent=${window.location.hostname}`}
+            allow="autoplay; fullscreen"
+            allowFullScreen
+          />
+        </div>
+      )
+    }
+  }
+
+  // Fallback — link out
   return (
     <div className="clip-frame clip-link-fallback">
       <p className="muted">

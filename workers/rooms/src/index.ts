@@ -1149,11 +1149,6 @@ export class RoomsDOv2 implements DurableObject {
       if (Date.now() - session.lastVoteAt < voteCooldownMs) return
       const entry = this.round.entries.find((item) => item.id === parsed.entryId)
       if (!entry) return
-      // Block self-voting: entry.id is the playerId of the submitter
-      if (session.role === 'player' && entry.id === session.playerId) {
-        ws.send(toServerMessage({ type: 'error', message: 'You cannot vote for your own clip.' }))
-        return
-      }
       if (session.role === 'audience') {
         if (!session.audienceId) return
         if (this.votesByAudience.has(session.audienceId)) return
