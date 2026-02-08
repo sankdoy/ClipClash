@@ -7,6 +7,7 @@ import {
   requestNotificationPermission,
   scheduleTimerNotification
 } from '../../utils/notifications'
+import { compressVideo } from '../../utils/video-compress'
 import type {
   Category,
   ChatMessage,
@@ -914,31 +915,51 @@ export default function Room() {
       const ws = socketRef.current
       if (!ws || ws.readyState !== WebSocket.OPEN) return
 
-      // Extract video in background — submit to DO immediately, then update with videoUrl
+      // Submit to DO immediately (without video), then extract + compress + upload in background
       ws.send(JSON.stringify({ type: 'submit_submission', categoryId, url: trimmed, title: title.trim() || 'Untitled' }))
 
-      // Start video extraction if not already extracting this URL
+      // Extract, compress, and upload video in background
       if (!extractingRef.current[trimmed]) {
         extractingRef.current[trimmed] = true
         try {
-          const res = await fetch('/api/video/extract', {
+          // Step 1: Get direct download URL from cobalt
+          const extractRes = await fetch('/api/video/extract', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ url: trimmed })
           })
-          const data = await res.json()
-          if (data?.ok && data.serveUrl) {
-            // Re-submit with the video URL attached
+          const extractData = await extractRes.json()
+          if (!extractData?.ok || !extractData.downloadUrl) throw new Error('Extract failed')
+
+          // Step 2: Download video through our proxy (CORS)
+          const videoRes = await fetch(`/api/video/proxy?url=${encodeURIComponent(extractData.downloadUrl)}`)
+          if (!videoRes.ok) throw new Error('Download failed')
+          const rawBlob = await videoRes.blob()
+
+          // Step 3: Compress client-side
+          const compressed = await compressVideo(rawBlob)
+
+          // Step 4: Upload compressed video to R2
+          const uploadRes = await fetch('/api/video/upload', {
+            method: 'POST',
+            headers: { 'content-type': compressed.type || 'video/webm' },
+            body: compressed
+          })
+          const uploadData = await uploadRes.json()
+          if (!uploadData?.ok || !uploadData.serveUrl) throw new Error('Upload failed')
+
+          // Step 5: Re-submit with video URL
+          if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({
               type: 'submit_submission',
               categoryId,
               url: trimmed,
               title: title.trim() || 'Untitled',
-              videoUrl: data.serveUrl
+              videoUrl: uploadData.serveUrl
             }))
           }
         } catch {
-          // Extraction failed — fall back to iframe embed (no action needed)
+          // Pipeline failed — clip will use fallback embed (no action needed)
         } finally {
           delete extractingRef.current[trimmed]
         }

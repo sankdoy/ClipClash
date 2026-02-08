@@ -19,7 +19,9 @@ export async function onRequestGet({ request, params, env }: { request: Request;
   const headers = new Headers()
   headers.set('Content-Type', object.httpMetadata?.contentType ?? 'video/mp4')
   headers.set('Accept-Ranges', 'bytes')
-  headers.set('Cache-Control', 'public, max-age=3600')
+  // Edge cache for 20 min (clips are deleted after match anyway), browser cache 5 min
+  headers.set('Cache-Control', 'public, s-maxage=1200, max-age=300')
+  headers.set('CDN-Cache-Control', 'public, max-age=1200')
   headers.set('Access-Control-Allow-Origin', '*')
 
   if (object.size !== undefined) {
