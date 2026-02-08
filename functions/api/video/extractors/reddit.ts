@@ -76,7 +76,7 @@ export async function extractReddit(url: string): Promise<ExtractionResult> {
 
     // Direct GIF link
     if (post.url?.endsWith('.gif')) {
-      return { ok: true, downloadUrl: post.url }
+      return { ok: true, downloadUrl: post.url, fetchHeaders: { 'user-agent': USER_AGENT } }
     }
 
     const redditVideo = post.secure_media?.reddit_video
@@ -86,7 +86,7 @@ export async function extractReddit(url: string): Promise<ExtractionResult> {
 
     // fallback_url is a direct MP4 link (video-only, which is fine for our use)
     const videoUrl = redditVideo.fallback_url.split('?')[0]
-    return { ok: true, downloadUrl: videoUrl }
+    return { ok: true, downloadUrl: videoUrl, fetchHeaders: { 'user-agent': USER_AGENT } }
   } catch (err) {
     return { ok: false, error: `Reddit extraction failed: ${err instanceof Error ? err.message : 'unknown'}` }
   }

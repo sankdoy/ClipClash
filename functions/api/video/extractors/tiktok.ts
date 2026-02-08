@@ -83,7 +83,17 @@ export async function extractTikTok(url: string): Promise<ExtractionResult> {
       return { ok: false, error: 'No video playAddr found.' }
     }
 
-    return { ok: true, downloadUrl: detail.video.playAddr }
+    // TikTok video URLs require referer and cookies to download
+    const cookies = res.headers.get('set-cookie') ?? ''
+    return {
+      ok: true,
+      downloadUrl: detail.video.playAddr,
+      fetchHeaders: {
+        'referer': 'https://www.tiktok.com/',
+        'user-agent': USER_AGENT,
+        ...(cookies ? { 'cookie': cookies.split(',').map(c => c.split(';')[0].trim()).join('; ') } : {})
+      }
+    }
   } catch (err) {
     return { ok: false, error: `TikTok extraction failed: ${err instanceof Error ? err.message : 'unknown'}` }
   }

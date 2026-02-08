@@ -172,7 +172,7 @@ export async function extractTwitter(url: string): Promise<ExtractionResult> {
           const videoItem = media.find((m: any) => m.type === 'video' || m.type === 'animated_gif')
           if (videoItem?.video_info?.variants) {
             const videoUrl = bestQuality(videoItem.video_info.variants)
-            if (videoUrl) return { ok: true, downloadUrl: videoUrl }
+            if (videoUrl) return { ok: true, downloadUrl: videoUrl, fetchHeaders: { 'user-agent': USER_AGENT } }
           }
         }
       }

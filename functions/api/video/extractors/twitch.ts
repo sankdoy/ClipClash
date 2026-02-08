@@ -79,7 +79,7 @@ export async function extractTwitch(url: string): Promise<ExtractionResult> {
       token: accessToken.value
     })}`
 
-    return { ok: true, downloadUrl }
+    return { ok: true, downloadUrl, fetchHeaders: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36' } }
   } catch (err) {
     return { ok: false, error: `Twitch extraction failed: ${err instanceof Error ? err.message : 'unknown'}` }
   }

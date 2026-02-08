@@ -922,7 +922,7 @@ export default function Room() {
       if (!extractingRef.current[trimmed]) {
         extractingRef.current[trimmed] = true
         try {
-          // Step 1: Get direct download URL from cobalt
+          // Step 1: Extract video and cache to R2 (server handles platform auth)
           const extractRes = await fetch('/api/video/extract', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -931,8 +931,8 @@ export default function Room() {
           const extractData = await extractRes.json()
           if (!extractData?.ok || !extractData.downloadUrl) throw new Error('Extract failed')
 
-          // Step 2: Download video through our proxy (CORS)
-          const videoRes = await fetch(`/api/video/proxy?url=${encodeURIComponent(extractData.downloadUrl)}`)
+          // Step 2: Download from our R2 cache (no CORS/auth issues)
+          const videoRes = await fetch(extractData.downloadUrl)
           if (!videoRes.ok) throw new Error('Download failed')
           const rawBlob = await videoRes.blob()
 
